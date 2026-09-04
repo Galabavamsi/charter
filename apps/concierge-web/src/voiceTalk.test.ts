@@ -42,6 +42,13 @@ describe('talk voice UI state', () => {
     expect(voiceErrorCopy({ type: 'audio-start-failed' })).toMatch(/playback/i);
     expect(voiceErrorCopy({ message: 'invalid public key' })).toBe('VAPI_NOT_READY');
     expect(voiceErrorCopy(new Error('VOICE_CONNECT_TIMEOUT'))).toMatch(/microphone/i);
+    expect(
+      voiceErrorCopy({
+        message: [
+          'assistant.startSpeakingPlan.each value in customEndpointingRules.type must be one of the following values: assistant, customer, both',
+        ],
+      }),
+    ).toMatch(/customer/);
   });
 });
 
@@ -240,6 +247,7 @@ describe('talk assistant session config', () => {
     expect(assistant.startSpeakingPlan).toMatchObject({
       waitSeconds: 0.55,
       smartEndpointingPlan: { provider: 'livekit' },
+      customEndpointingRules: [{ type: 'customer' }],
       transcriptionEndpointingPlan: {
         onPunctuationSeconds: 0.8,
         onNoPunctuationSeconds: 1.6,

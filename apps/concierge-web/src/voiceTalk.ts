@@ -97,7 +97,30 @@ export function voiceErrorCopy(error: unknown): string {
   if (/VOICE_CONNECT_TIMEOUT/i.test(text)) {
     return 'Voice did not connect. Allow the microphone and try Talk again.';
   }
+  const validation = vapiValidationMessage(error);
+  if (validation) {
+    return validation;
+  }
   return 'VOICE_ERROR';
+}
+
+function vapiValidationMessage(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const record = error as Record<string, unknown>;
+  const nested =
+    record.error && typeof record.error === 'object'
+      ? (record.error as Record<string, unknown>)
+      : record;
+  const message = nested.message ?? record.message;
+  if (typeof message === 'string' && /must be one of|should not exist|bad request/i.test(message)) {
+    return message;
+  }
+  if (Array.isArray(message) && typeof message[0] === 'string') {
+    return message[0];
+  }
+  return null;
 }
 
 export function resolveVoiceModelBase(
@@ -298,7 +321,7 @@ export function buildTalkAssistant(input: {
       },
       customEndpointingRules: [
         {
-          type: 'user',
+          type: 'customer',
           regex:
             "(?i)(\\b(the|a|an|to|and|or|for|of|uh|um|so|let's)\\s*[.?!]*$)|[\u2014\u2013\u2026-]$",
           timeoutSeconds: 2.2,
