@@ -1,0 +1,42 @@
+{
+  "name": "@charter/core-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --import tsx --watch src/server.ts",
+    "build": "tsup && node scripts/copy-spa.mjs",
+    "start": "node dist/server.js",
+    "smoke:built": "node scripts/postbuild-smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "e2e:money-api": "tsx src/e2e/money-harness.ts",
+    "lint": "eslint src tsup.config.ts scripts"
+  },
+  "dependencies": {
+    "@charter/catalog": "workspace:*",
+    "@charter/commerce": "workspace:*",
+    "@charter/config": "workspace:*",
+    "@charter/db": "workspace:*",
+    "@charter/domain-shared": "workspace:*",
+    "@charter/ledger": "workspace:*",
+    "@charter/notify": "workspace:*",
+    "@charter/orchestrator": "workspace:*",
+    "@charter/payments": "workspace:*",
+    "@charter/razorpay": "workspace:*",
+    "@charter/recovery": "workspace:*",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.3",
+    "fastify": "^5.2.1",
+    "jose": "^6.2.10",
+    "langfuse": "^3.38.20"
+  },
+  "devDependencies": {
+    "@charter/concierge-web": "workspace:^",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

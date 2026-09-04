@@ -1,0 +1,48 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: charter
+          POSTGRES_PASSWORD: charter
+          POSTGRES_DB: charter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U charter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://charter:charter@127.0.0.1:5432/charter
+      TEST_DATABASE_URL: postgres://charter:charter@127.0.0.1:5432/charter
+      CI_REQUIRE_TEST_DATABASE_URL: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm migrate
+      - name: Generate ephemeral application-role credential
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV, 'CHARTER_APP_PASSWORD=' + require('node:crypto').randomBytes(32).toString('hex') + '\n')"
+      - run: pnpm db:provision-role
+      - run: pnpm --filter @charter/db exec vitest run src/database.integration.test.ts
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm smoke:built
+      - run: pnpm lint
+      - run: pnpm format:check

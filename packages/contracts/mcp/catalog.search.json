@@ -1,0 +1,11 @@
+{
+  "name": "catalog.search",
+  "description": "Search a merchant catalog. Policy and money are not decided here.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string" }
+    },
+    "required": ["query"]
+  }
+}

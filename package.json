@@ -1,0 +1,37 @@
+{
+  "name": "charter",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.15.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "start": "pnpm --filter @charter/core-api start",
+    "build": "turbo run build",
+    "smoke:built": "pnpm --filter @charter/core-api smoke:built",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "migrate": "pnpm --filter @charter/db migrate",
+    "db:provision-role": "pnpm --filter @charter/db provision-role",
+    "seed": "pnpm --filter @charter/db seed",
+    "ready": "pnpm install && pnpm db:up && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.5",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "supabase": "^2.115.0",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.1",
+    "vitest": "^2.1.8"
+  }
+}

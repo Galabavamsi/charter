@@ -1,0 +1,135 @@
+:root {
+  --sky: #5390d9;
+  --sky-deep: #3d78c4;
+  --cobalt: #0056b3;
+  --red: #ff4b3e;
+  --powder: #c7def5;
+  --peach: #f4b8a8;
+  --foam: rgba(255, 255, 255, 0.22);
+  --foam-strong: rgba(255, 255, 255, 0.36);
+  --ink: #0b1220;
+  --muted: rgba(11, 18, 32, 0.62);
+  --line: rgba(255, 255, 255, 0.28);
+  --surface: var(--sky);
+  --ok: var(--cobalt);
+  --warn: var(--peach);
+  --deny: var(--red);
+  --space: 1.25rem;
+  --radius: 1.5rem;
+  --font: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --shadow: 0 24px 60px rgba(11, 18, 32, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--sky);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+a {
+  color: var(--cobalt);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1.15rem;
+  background: var(--red);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+/* Author `display` on `button` otherwise wins over the UA `[hidden]` rule. */
+[hidden] {
+  display: none !important;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(255, 75, 62, 0.28);
+}
+
+button[type='submit'] {
+  background: var(--red);
+}
+
+button.ghost,
+button[data-kind='ghost'] {
+  background: var(--foam-strong);
+  color: var(--ink);
+}
+
+button.ghost:hover,
+button[data-kind='ghost']:hover {
+  box-shadow: 0 10px 24px rgba(11, 18, 32, 0.08);
+}
+
+input:not([type='checkbox']):not([type='radio']),
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--ink);
+  border-radius: 1rem;
+  padding: 0.75rem 0.9rem;
+  outline: none;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  margin: 0 0.4rem 0 0;
+  vertical-align: middle;
+  accent-color: var(--red);
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+input:focus,
+textarea:focus {
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+}
+
+code {
+  font-size: 0.92em;
+}

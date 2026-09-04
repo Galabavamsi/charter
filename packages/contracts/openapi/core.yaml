@@ -1,0 +1,106 @@
+{
+  'openapi': '3.1.0',
+  'info': { 'title': 'Charter Core API', 'version': '0.1.0' },
+  'paths':
+    {
+      '/health':
+        {
+          'get':
+            { 'summary': 'Liveness', 'responses': { '200': { 'description': 'Service is up' } } },
+        },
+      '/api/v1/shops':
+        {
+          'get':
+            {
+              'summary': 'Search published shops',
+              'parameters':
+                [
+                  { 'name': 'q', 'in': 'query', 'schema': { 'type': 'string', 'maxLength': 120 } },
+                  {
+                    'name': 'category',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'maxLength': 80 },
+                  },
+                  { 'name': 'inStock', 'in': 'query', 'schema': { 'enum': ['true', 'false'] } },
+                  {
+                    'name': 'minPriceMinor',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'pattern': '^[0-9]{1,13}$' },
+                  },
+                  {
+                    'name': 'maxPriceMinor',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'pattern': '^[0-9]{1,13}$' },
+                  },
+                  {
+                    'name': 'sort',
+                    'in': 'query',
+                    'schema': { 'enum': ['relevance', 'newest', 'name'] },
+                  },
+                  { 'name': 'cursor', 'in': 'query', 'schema': { 'type': 'string' } },
+                  {
+                    'name': 'limit',
+                    'in': 'query',
+                    'schema': { 'type': 'integer', 'minimum': 1, 'maximum': 48 },
+                  },
+                ],
+              'responses': { '200': { 'description': 'Published shop page with facets' } },
+            },
+        },
+      '/api/v1/shops/{slug}':
+        {
+          'get':
+            {
+              'summary': 'Search one published shop catalog',
+              'parameters':
+                [
+                  {
+                    'name': 'slug',
+                    'in': 'path',
+                    'required': true,
+                    'schema': { 'type': 'string' },
+                  },
+                  { 'name': 'q', 'in': 'query', 'schema': { 'type': 'string', 'maxLength': 120 } },
+                  {
+                    'name': 'sku',
+                    'in': 'query',
+                    'description': 'Exact SKU; cannot be combined with q or cursor.',
+                    'schema': { 'type': 'string', 'maxLength': 160 },
+                  },
+                  {
+                    'name': 'category',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'maxLength': 80 },
+                  },
+                  { 'name': 'inStock', 'in': 'query', 'schema': { 'enum': ['true', 'false'] } },
+                  {
+                    'name': 'minPriceMinor',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'pattern': '^[0-9]{1,13}$' },
+                  },
+                  {
+                    'name': 'maxPriceMinor',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'pattern': '^[0-9]{1,13}$' },
+                  },
+                  {
+                    'name': 'sort',
+                    'in': 'query',
+                    'schema': { 'enum': ['relevance', 'newest', 'name'] },
+                  },
+                  { 'name': 'cursor', 'in': 'query', 'schema': { 'type': 'string' } },
+                  {
+                    'name': 'limit',
+                    'in': 'query',
+                    'schema': { 'type': 'integer', 'minimum': 1, 'maximum': 48 },
+                  },
+                ],
+              'responses':
+                {
+                  '200': { 'description': 'Published variant page with merchant facts and facets' },
+                  '404': { 'description': 'Published shop not found' },
+                },
+            },
+        },
+    },
+}

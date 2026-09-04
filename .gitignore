@@ -1,0 +1,47 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# private harness / research (not the public product)
+CONTEXT.md
+.planning/
+.serena/
+.firecrawl/
+tmp/
+extract-*.md
+*.canvas.tsx
+
+# dependencies and build
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# generated test artifacts (Playwright, Vitest)
+test-results/
+playwright-report/
+blob-report/
+output/
+output/
+
+# logs and OS
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# generated (regenerated in CI)
+# packages/contracts/generated remains tracked once the generator is stable
+*.timestamp-*.mjs

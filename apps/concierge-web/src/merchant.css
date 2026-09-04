@@ -1,0 +1,943 @@
+.merchant-index {
+  width: min(72rem, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem) 0;
+}
+
+.merchant-shell,
+.merchant-layout,
+.merchant-nav,
+.merchant-content,
+.merchant-page {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.merchant-index > h1 {
+  max-width: 16ch;
+  margin: 0.35rem 0 0.75rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(2.6rem, 6vw, 5.2rem);
+  font-weight: 520;
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+}
+
+.merchant-index > p {
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+.merchant-onboarding-form {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.8fr) minmax(18rem, 1.2fr) auto;
+  gap: 1rem;
+  align-items: end;
+  margin-top: 2rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid rgba(11, 18, 32, 0.32);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.merchant-onboarding-form label,
+.merchant-record-form label,
+.merchant-filter-bar label,
+.stock-adjustment-form label,
+.offer-record label,
+.merchant-compact-field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  color: rgba(11, 18, 32, 0.74);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.merchant-onboarding-form input,
+.merchant-onboarding-form textarea,
+.merchant-record-form input,
+.merchant-record-form textarea,
+.merchant-record-form select,
+.merchant-filter-bar input,
+.merchant-filter-bar select,
+.stock-adjustment-form input,
+.offer-record input,
+.offer-record textarea,
+.merchant-compact-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(11, 18, 32, 0.34);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.merchant-onboarding-form textarea,
+.merchant-record-form textarea,
+.offer-record textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.merchant-onboarding-form button,
+.merchant-page button,
+.merchant-page .link-btn,
+.merchant-create-another summary {
+  min-height: 2.75rem;
+  border-radius: 0;
+}
+
+.merchant-create-another {
+  margin-top: 1.5rem;
+  border-top: 1px solid rgba(11, 18, 32, 0.24);
+}
+
+.merchant-create-another summary {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  padding: 0.6rem 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.merchant-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.merchant-breadcrumbs a {
+  color: inherit;
+}
+
+.merchant-context-line {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.merchant-page {
+  width: min(100%, 92rem);
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.merchant-page-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: end;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--ink);
+}
+
+.merchant-page-head h2 {
+  margin: 0.2rem 0 0.35rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  font-weight: 520;
+  line-height: 1;
+}
+
+.merchant-page-head p:last-child {
+  max-width: 66ch;
+  margin: 0;
+  color: var(--muted);
+}
+
+.merchant-page-actions,
+.record-actions,
+.record-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.merchant-nav .sidebar-guide {
+  min-height: 2.75rem;
+}
+
+.merchant-read-only,
+.merchant-guardrail,
+.metric-context,
+.payment-disclosure {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  border-left: 3px solid rgba(11, 18, 32, 0.55);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.merchant-form-notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border-left: 3px solid var(--cobalt);
+  background: rgba(255, 255, 255, 0.46);
+  font-weight: 650;
+}
+
+.merchant-form-notice[data-kind='error'] {
+  border-left-color: var(--red);
+}
+
+.merchant-state {
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid rgba(11, 18, 32, 0.28);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.merchant-state p {
+  max-width: 58ch;
+  color: var(--muted);
+}
+
+.merchant-skeleton {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid rgba(11, 18, 32, 0.2);
+}
+
+.merchant-skeleton span {
+  display: block;
+  height: 2.75rem;
+  background: rgba(11, 18, 32, 0.08);
+  animation: merchant-pulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes merchant-pulse {
+  to {
+    opacity: 0.42;
+  }
+}
+
+.record-status {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  min-height: 1.7rem;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.record-status > span {
+  width: 0.52rem;
+  height: 0.52rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.record-status[data-tone='ok'] {
+  color: #155c49;
+}
+
+.record-status[data-tone='ok'] > span {
+  background: currentColor;
+}
+
+.record-status[data-tone='warning'] {
+  color: #805115;
+}
+
+.record-status[data-tone='danger'] {
+  color: #8b231e;
+}
+
+.record-status[data-tone='danger'] > span {
+  background: currentColor;
+}
+
+.overview-ledger {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.15fr) minmax(18rem, 0.85fr);
+  border: 1px solid rgba(11, 18, 32, 0.34);
+}
+
+.overview-primary,
+.overview-funnel {
+  min-width: 0;
+  padding: clamp(1.25rem, 4vw, 2.4rem);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.overview-primary {
+  border-right: 1px solid rgba(11, 18, 32, 0.28);
+}
+
+.overview-primary p,
+.overview-funnel p,
+.overview-funnel > div > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.overview-primary > strong {
+  display: block;
+  margin: 0.3rem 0 0.55rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  font-weight: 520;
+  line-height: 0.92;
+  letter-spacing: -0.055em;
+}
+
+.overview-primary > span {
+  font-weight: 700;
+}
+
+.overview-funnel strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  font-weight: 520;
+}
+
+.funnel-track {
+  height: 0.8rem;
+  margin: 1.2rem 0 0.8rem;
+  background: rgba(11, 18, 32, 0.14);
+}
+
+.funnel-track span {
+  display: block;
+  height: 100%;
+  background: var(--cobalt);
+}
+
+.overview-records,
+.order-detail-facts,
+.recovery-record dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0;
+  border: 1px solid rgba(11, 18, 32, 0.24);
+}
+
+.overview-records > div,
+.order-detail-facts > div,
+.recovery-record dl > div {
+  min-width: 0;
+  padding: 1rem;
+  border-right: 1px solid rgba(11, 18, 32, 0.2);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.overview-records > div:last-child,
+.order-detail-facts > div:last-child,
+.recovery-record dl > div:last-child {
+  border-right: 0;
+}
+
+.overview-records dt,
+.order-detail-facts dt,
+.recovery-record dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.overview-records dd,
+.order-detail-facts dd,
+.recovery-record dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.overview-records dd {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.8rem;
+  font-weight: 520;
+}
+
+.overview-records small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+}
+
+.overview-plots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1px;
+  border: 1px solid rgba(11, 18, 32, 0.34);
+  background: rgba(11, 18, 32, 0.34);
+}
+
+.overview-plot {
+  min-width: 0;
+  padding: 1.15rem 1.25rem 1.3rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.overview-plot h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.overview-plot-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.overview-plot ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overview-plot li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(3.5rem, auto);
+  gap: 0.2rem 0.6rem;
+  align-items: center;
+  font-size: 0.86rem;
+}
+
+.overview-plot li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-plot li strong {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-bar {
+  grid-column: 1;
+  height: 0.45rem;
+  background: color-mix(in srgb, var(--ink) 72%, skyblue);
+}
+
+.metric-context {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  align-items: start;
+}
+
+.metric-context p {
+  margin: 0;
+}
+
+.metric-context p:last-child {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.merchant-record-form,
+.order-detail,
+.policy-preview,
+.settings-share,
+.membership-records {
+  margin: 0 0 1rem;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  border: 1px solid rgba(11, 18, 32, 0.3);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.record-form-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.record-form-head h3,
+.settings-share h3,
+.quote-itemization h4 {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.45rem;
+  font-weight: 520;
+}
+
+.record-form-head p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.merchant-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.merchant-form-grid .field-wide,
+.offer-record .field-wide {
+  grid-column: 1 / -1;
+}
+
+.record-form-actions {
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(11, 18, 32, 0.2);
+}
+
+.record-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(11, 18, 32, 0.28);
+}
+
+.record-table {
+  width: 100%;
+  min-width: 48rem;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.record-table caption {
+  padding: 0.7rem 0.8rem;
+  color: var(--muted);
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.record-table th,
+.record-table td {
+  padding: 0.75rem;
+  border-top: 1px solid rgba(11, 18, 32, 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.record-table th {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-table td strong,
+.record-table td small {
+  display: block;
+}
+
+.record-table td small {
+  margin-top: 0.22rem;
+  color: var(--muted);
+}
+
+.stock-adjustment-form {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 17rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(11, 18, 32, 0.2);
+}
+
+.merchant-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.5fr) repeat(3, minmax(9rem, 0.75fr)) auto auto;
+  gap: 0.7rem;
+  align-items: end;
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(11, 18, 32, 0.26);
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.payment-timeline {
+  display: grid;
+  gap: 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgba(11, 18, 32, 0.25);
+}
+
+.payment-timeline li {
+  display: grid;
+  grid-template-columns: minmax(11rem, 0.45fr) minmax(10rem, 0.45fr) minmax(16rem, 1fr);
+  gap: 0.8rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba(11, 18, 32, 0.18);
+}
+
+.payment-timeline time {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.payment-timeline p {
+  margin: 0;
+}
+
+.quote-itemization {
+  padding: 1rem 0;
+}
+
+.quote-itemization ul,
+.policy-preview-list {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote-itemization li,
+.policy-preview-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(11, 18, 32, 0.16);
+}
+
+.recovery-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid rgba(11, 18, 32, 0.28);
+  background: rgba(11, 18, 32, 0.28);
+}
+
+.recovery-record {
+  min-width: 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.recovery-record > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.recovery-record .record-id {
+  max-width: 28ch;
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.recovery-record > header strong {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 520;
+}
+
+.recovery-record dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recovery-record dl > div:nth-child(2n) {
+  border-right: 0;
+}
+
+.recovery-blocked {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.8rem 0;
+  padding: 0.65rem;
+  border-left: 3px solid var(--red);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.recovery-record > small {
+  display: block;
+  margin-top: 0.8rem;
+  color: var(--muted);
+}
+
+.offers-editor {
+  display: grid;
+  gap: 0.8rem;
+  margin: 1rem 0 0;
+  padding: 1rem;
+  border: 1px solid rgba(11, 18, 32, 0.22);
+}
+
+.offers-editor legend {
+  padding: 0 0.4rem;
+  font-weight: 750;
+}
+
+.offer-record {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.6fr) minmax(10rem, 0.6fr) minmax(16rem, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(11, 18, 32, 0.18);
+}
+
+.offer-flag {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.settings-share {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.settings-share a {
+  overflow-wrap: anywhere;
+}
+
+.payment-disclosure {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+}
+
+.payment-disclosure p {
+  margin: 0;
+}
+
+.payment-disclosure p:last-child {
+  grid-column: 2;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.merchant-page :focus-visible,
+.merchant-onboarding-form :focus-visible,
+.merchant-breadcrumbs a:focus-visible {
+  outline: 3px solid var(--cobalt);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .merchant-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-search {
+    grid-column: 1 / -1;
+  }
+
+  .offer-record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .merchant-layout,
+  .merchant-nav,
+  .merchant-content {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .merchant-nav nav {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .merchant-nav .sidebar-guide {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .merchant-onboarding-form,
+  .merchant-page-head,
+  .overview-ledger,
+  .overview-plots,
+  .settings-share {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .overview-primary {
+    border-right: 0;
+    border-bottom: 1px solid rgba(11, 18, 32, 0.28);
+  }
+
+  .overview-records,
+  .order-detail-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-records > div,
+  .order-detail-facts > div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(11, 18, 32, 0.2);
+  }
+
+  .overview-records > div:last-child,
+  .order-detail-facts > div:last-child {
+    border-bottom: 0;
+  }
+
+  .metric-context,
+  .payment-disclosure {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-context p:last-child,
+  .payment-disclosure p:last-child {
+    grid-column: 1;
+  }
+
+  .merchant-form-grid,
+  .merchant-filter-bar,
+  .recovery-records,
+  .offer-record {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-search,
+  .merchant-form-grid .field-wide,
+  .offer-record .field-wide {
+    grid-column: 1;
+  }
+
+  .record-table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .record-table {
+    min-width: 0;
+    background: transparent;
+  }
+
+  .record-table caption {
+    padding-inline: 0;
+  }
+
+  .record-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .record-table tbody,
+  .record-table tr,
+  .record-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .record-table tr {
+    margin-bottom: 0.75rem;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid rgba(11, 18, 32, 0.28);
+    background: rgba(255, 255, 255, 0.34);
+  }
+
+  .record-table td {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.65rem 0;
+    border-top: 0;
+    border-bottom: 1px solid rgba(11, 18, 32, 0.14);
+  }
+
+  .record-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .record-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .payment-timeline li {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .merchant-index,
+  .merchant-page {
+    width: 100%;
+    padding-inline: 0.75rem;
+  }
+
+  .merchant-onboarding-form,
+  .merchant-record-form,
+  .order-detail,
+  .policy-preview,
+  .settings-share,
+  .membership-records {
+    padding: 0.8rem;
+  }
+
+  .record-form-head {
+    display: grid;
+  }
+
+  .record-table td {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .recovery-record dl {
+    grid-template-columns: 1fr;
+  }
+
+  .recovery-record dl > div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(11, 18, 32, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .merchant-skeleton span {
+    animation: none;
+  }
+}

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: charter
+    runtime: node
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: NODE_VERSION
+        value: '20'
+      - key: CHARTER_ENV
+        value: production
+      - key: RAZORPAY_MODE
+        value: test
