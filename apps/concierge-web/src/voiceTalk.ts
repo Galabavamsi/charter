@@ -187,7 +187,11 @@ export function voiceTranscriptFromMessage(event: VoiceTranscriptEvent): ChatMes
   return null;
 }
 
-const VOICE_USER_COALESCE_MS = 8_000;
+const VOICE_COALESCE_MS = 8_000;
+const HANGING_JOIN =
+  /(?:\b(?:the|a|an|to|and|or|for|of|if|when|just say)|["“][^"”]*)$/iu;
+const TRAILING_AMOUNT = /^(.*?)([₹Rs]{1,2}\s*)?(\d[\d,]*)\.?$/u;
+const LEADING_DIGITS = /^(\d[\d,]*)\.?$/u;
 
 function normalizeVoiceUtterance(text: string): string {
   return text
@@ -215,7 +219,13 @@ export function joinVoiceFragments(lastText: string, nextText: string): string {
   if (lastNorm && nextNorm.includes(lastNorm)) {
     return next;
   }
-  return `${last} ${next}`.replace(/\s+/g, ' ');
+  const amount = last.match(TRAILING_AMOUNT);
+  const digits = next.match(LEADING_DIGITS);
+  if (amount && digits && (amount[2] || /\d\.?$/.test(last))) {
+    return `${last.replace(/\.$/, '')}${digits[1]}.`;
+  }
+  const gluedLast = HANGING_JOIN.test(last.replace(/\.$/, '')) ? last.replace(/\.$/, '') : last;
+  return `${gluedLast} ${next}`.replace(/\s+/g, ' ');
 }
 
 /** Same turn if texts match or one is a prefix of the other. Never shrink. */
@@ -242,8 +252,7 @@ export function upsertVoiceTranscript(
   next: ChatMessage,
   now = Date.now(),
 ): ChatMessage[] {
-  const stamped =
-    next.role === 'you' && next.source === 'voice' ? { ...next, at: next.at ?? now } : next;
+  const stamped = next.source === 'voice' ? { ...next, at: next.at ?? now } : next;
   const last = messages.at(-1);
   if (!last || last.role !== stamped.role) {
     return [...messages, stamped];
@@ -257,21 +266,22 @@ export function upsertVoiceTranscript(
     return messages;
   }
   if (decision === 'replace') {
-    return [...messages.slice(0, -1), stamped];
+    return [...messages.slice(0, -1), { ...stamped, at: stamped.at ?? last.at ?? now }];
   }
+  const withinWindow = last.at != null && now - last.at < VOICE_COALESCE_MS;
   const liveUserVoice =
-    last.role === 'you' &&
-    stamped.role === 'you' &&
-    last.source === 'voice' &&
-    stamped.source === 'voice' &&
-    last.at != null &&
-    now - last.at < VOICE_USER_COALESCE_MS;
-  if (liveUserVoice) {
+    last.role === 'you' && last.source === 'voice' && stamped.source === 'voice' && withinWindow;
+  const liveConciergeVoice =
+    last.role === 'concierge' && last.source === 'voice' && stamped.source === 'voice' && withinWindow;
+  if (liveUserVoice || liveConciergeVoice) {
     const text = joinVoiceFragments(last.text, stamped.text);
     if (text === last.text) {
       return messages;
     }
-    return [...messages.slice(0, -1), { role: 'you', text, source: 'voice', at: now }];
+    return [
+      ...messages.slice(0, -1),
+      { role: last.role, text, source: 'voice', at: now },
+    ];
   }
   return [...messages, stamped];
 }

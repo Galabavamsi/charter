@@ -1344,7 +1344,11 @@ export function NorthstarDemo({
           </div>
           <p
             className={
-              status === 'Ready.' || status === 'Continue this chat.' ? 'sr-only' : 'composer-note'
+              status === 'Ready.' ||
+              status === 'Continue this chat.' ||
+              isTalkSessionActive(voicePhase)
+                ? 'sr-only'
+                : 'composer-note'
             }
             role="status"
             aria-live="polite"

@@ -19,6 +19,11 @@ const markdownComponents: Components = {
   },
 };
 
+/** Bare `260906.` lines become huge ordered-list markers outside the bubble. */
+export function markdownSafeChatText(text: string): string {
+  return text.replace(/(^|\n)(\d+)\.\s*(?=\n|$)/g, '$1$2\\.');
+}
+
 export function ChatMarkdown({ text }: { text: string }) {
   return (
     <div className="bubble-md">
@@ -28,7 +33,7 @@ export function ChatMarkdown({ text }: { text: string }) {
         skipHtml
         components={markdownComponents}
       >
-        {text}
+        {markdownSafeChatText(text)}
       </Markdown>
     </div>
   );

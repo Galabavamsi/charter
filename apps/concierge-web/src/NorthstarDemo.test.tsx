@@ -222,6 +222,13 @@ describe('concierge markdown', () => {
     expect(document.body.textContent).not.toMatch(/<script>/i);
   });
 
+  it('does not render a bare amount line as an ordered list outside the bubble', () => {
+    const numbered = render(<ChatMarkdown text={'Delivery by 20.\n260906.'} />);
+    expect(numbered.container.querySelector('ol')).toBeNull();
+    expect(numbered.container.textContent).toMatch(/260906/);
+    numbered.unmount();
+  });
+
   it('renders assistant markdown in the chat bubble, not buyer text', () => {
     upsertThread(
       { userId: 'user-buyer', shopId: 'northstar-demo-in' },

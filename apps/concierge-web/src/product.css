@@ -253,6 +253,8 @@ body[data-page='login']::before {
   max-width: min(34rem, 92%);
   margin: 0 0 0.85rem;
   padding: 0.7rem 0.9rem;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   border: 1px solid var(--line);
   border-radius: 1rem 1rem 1rem 0.25rem;
   background: #fff;
@@ -261,7 +263,7 @@ body[data-page='login']::before {
 .bubble[data-role='you'] {
   margin-left: auto;
   border-radius: 1rem 1rem 0.25rem 1rem;
-  background: rgba(11, 18, 32, 0.06);
+  background: #e8edf4;
 }
 
 .bubble-role {
@@ -294,6 +296,7 @@ body[data-page='login']::before {
 .bubble-md ul,
 .bubble-md ol {
   padding-left: 1.2rem;
+  list-style-position: inside;
 }
 
 .bubble-md li + li {

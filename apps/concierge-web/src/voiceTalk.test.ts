@@ -198,6 +198,44 @@ describe('talk transcript upsert', () => {
     );
   });
 
+  it('joins spoken concierge fragments into one bubble, including split amounts', () => {
+    const now = 1_700_000_000_000;
+    const fragments = [
+      'Your total is locked at RS1997.',
+      'For.',
+      'Assorted chocolate box.',
+      'RS9.',
+      '97.',
+      'You can change the quantity on any product card, and when the cart.',
+      'Looks right, just say "buy.',
+      'Now" to lock this total.',
+    ];
+    let messages: Array<{
+      role: 'you' | 'concierge';
+      text: string;
+      source?: 'voice';
+      at?: number;
+    }> = [];
+    for (const [index, text] of fragments.entries()) {
+      messages = upsertVoiceTranscript(
+        messages,
+        { role: 'concierge', text, source: 'voice' },
+        now + index * 300,
+      );
+    }
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toMatch(/Assorted chocolate box/i);
+    expect(messages[0]?.text).toMatch(/RS997|RS1997|1997/);
+    expect(messages[0]?.text).toMatch(/buy Now/i);
+    expect(joinVoiceFragments('RS9.', '97.')).toBe('RS997.');
+    expect(joinVoiceFragments('Change quantity on the card, if.', 'You need to.')).toMatch(
+      /card, if You need to/i,
+    );
+    expect(joinVoiceFragments('Looks right, just say "buy.', 'Now" to lock this total.')).toBe(
+      'Looks right, just say "buy Now" to lock this total.',
+    );
+  });
+
   it('keeps a longer money-truth concierge bubble when a truncated voice final arrives', () => {
     const money = 'Pay **₹2,347.00** when you are ready. One Charter order.';
     const longer = upsertVoiceTranscript([], {
@@ -226,7 +264,9 @@ describe('talk transcript upsert', () => {
       text: copy,
       source: 'voice',
     });
-    expect(spokenLong).toEqual([{ role: 'concierge', text: copy, source: 'voice' }]);
+    expect(spokenLong).toEqual([
+      expect.objectContaining({ role: 'concierge', text: copy, source: 'voice' }),
+    ]);
   });
 });
 
