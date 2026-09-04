@@ -176,10 +176,16 @@ describe('core-api health', () => {
       expect(robots.body).toContain('Sitemap: https://charter.example/sitemap.xml');
       expect(sitemap.statusCode).toBe(200);
       expect(sitemap.headers['content-type']).toContain('application/xml');
+      expect(sitemap.body).toContain('<loc>https://charter.example/agents</loc>');
       expect(sitemap.body).toContain('<loc>https://charter.example/shops/northstar</loc>');
       expect(sitemap.body).toContain('<loc>https://charter.example/shops/indigo-desk</loc>');
       expect(sitemap.body).not.toContain('draft-private');
       expect(sitemap.body).not.toContain('Members only label');
+      const agents = await app.inject({ method: 'GET', url: '/agents' });
+      expect(agents.statusCode).toBe(200);
+      expect(agents.body).toContain(
+        '<title data-charter-head="title">Agents and MCP — Charter</title>',
+      );
       expect(directory.statusCode).toBe(200);
       expect(directory.body).toContain(
         '<title data-charter-head="title">Shop directory — Charter</title>',

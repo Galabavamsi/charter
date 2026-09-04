@@ -531,3 +531,18 @@ describe('public shop storefront route', () => {
     expect(screen.queryByText(/synthetic test shop/i)).not.toBeInTheDocument();
   });
 });
+
+describe('agents route', () => {
+  it('explains MCP tools and honest discovery without claiming certification', async () => {
+    renderAt('/agents', vi.fn(async () => ({})) as ApiClient);
+    expect(
+      await screen.findByRole('heading', { name: /Same catalog. Same checkout. For agents./i }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Agents' })).toBeVisible();
+    expect(screen.getByRole('link', { name: /well-known\/charter-commerce\.json/i })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'GET /mcp/tools' })).toBeVisible();
+    expect(screen.getByRole('row', { name: /catalog\.search/i })).toBeVisible();
+    expect(screen.getByRole('row', { name: /checkout\.complete/i })).toBeVisible();
+    expect(screen.getByText(/Not certified: UCP, ACP, AP2, Gemini, Alexa/i)).toBeVisible();
+  });
+});

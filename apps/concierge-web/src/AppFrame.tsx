@@ -108,6 +108,7 @@ export function AppFrame() {
         <nav className="global-nav" aria-label="Primary">
           {auth.session ? <Link to="/chats">Concierge</Link> : null}
           <Link to="/shops">Shops</Link>
+          <Link to="/agents">Agents</Link>
           {auth.session ? <Link to="/orders">Orders</Link> : null}
         </nav>
         <div className="global-account">
@@ -148,6 +149,7 @@ export function AppFrame() {
                   </p>
                   <Link to="/chats">Concierge</Link>
                   <Link to="/shops">Shops</Link>
+                  <Link to="/agents">Agents</Link>
                   <Link to="/orders">Buyer orders</Link>
                   <Link to="/merchant">My shops</Link>
                   {hasControlAccess ? <Link to="/control">Control</Link> : null}

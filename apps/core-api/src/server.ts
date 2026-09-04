@@ -25,6 +25,7 @@ import type { TenantRepository } from './tenant/repository.js';
 import { createMemoryTenantRepository } from './testing/memory-tenant-repository.js';
 import { createPostgresTenantRepository } from './tenant/postgres-repository.js';
 import {
+  renderAgentsIndexHtml,
   renderDirectoryIndexHtml,
   renderShopIndexHtml,
   robotsText,
@@ -241,6 +242,15 @@ export async function buildServer(
           reply.header('cache-control', 'no-cache');
         }
       },
+    });
+    app.get('/agents', async (request, reply) => {
+      const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);
+      return reply
+        .header('cache-control', 'public, max-age=60')
+        .header('x-content-type-options', 'nosniff')
+        .header('referrer-policy', 'strict-origin-when-cross-origin')
+        .type('text/html; charset=utf-8')
+        .send(renderAgentsIndexHtml(spaIndex, publicOrigin));
     });
     app.get('/shops', async (request, reply) => {
       const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);

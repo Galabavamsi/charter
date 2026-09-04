@@ -137,7 +137,7 @@ Rules hold hard cap, autonomous cap, and forbidden materials (Northstar: no glas
 
 **Voice** is not a second product. Talk uses Vapi; the custom LLM URL is this app (`/api/v1/voice/...`). Utterances become the same cart/quote/pay tools as chat. Transcripts are tagged `source: voice` in the thread.
 
-**MCP** is the AI-buyer door for Track 01 — agent-readable catalog + gated checkout, same amounts as Concierge. Live (no login for discovery/tools):
+**MCP** is the AI-buyer door for Track 01 — agent-readable catalog + gated checkout, same amounts as Concierge. Human-readable map on the site: [/agents](https://core-api-production-087b.up.railway.app/agents). Live APIs (no login for discovery/tools):
 
 | Surface | URL |
 | --- | --- |

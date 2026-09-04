@@ -1,4 +1,9 @@
-import { buildStoreStructuredData, publicShopCanonical } from '@charter/domain-shared';
+import {
+  CHARTER_COMMERCE_NOT_CERTIFIED,
+  CHARTER_COMMERCE_TOOLS,
+  buildStoreStructuredData,
+  publicShopCanonical,
+} from '@charter/domain-shared';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router';
 import { useApi } from '../account';
@@ -51,6 +56,9 @@ export function HomePage() {
           <Link className="quiet-link" to="/shops">
             Browse catalogs
           </Link>
+          <Link className="quiet-link" to="/agents">
+            Agent / MCP door
+          </Link>
           <Link className="quiet-link" to="/auth/sign-up?next=%2Fmerchant">
             Open a merchant desk
           </Link>
@@ -73,6 +81,142 @@ export function HomePage() {
           </li>
         </ol>
       </aside>
+    </section>
+  );
+}
+
+function useAgentsSeo() {
+  useEffect(() => {
+    replaceManagedHead(
+      managedHeadValues({
+        title: 'Agents and MCP — Charter',
+        description:
+          'Honest MCP and HTTP discovery for AI buyers. Same catalog and checkout as Concierge. Not a UCP, ACP, AP2, Gemini, or Alexa certification.',
+        canonical: `${window.location.origin}/agents`,
+        type: 'website',
+      }),
+    );
+    return clearManagedHead;
+  }, []);
+}
+
+export function AgentsPage() {
+  useAgentsSeo();
+  return (
+    <section className="directory-page agents-page fade">
+      <header className="editorial-head">
+        <div>
+          <p className="eyebrow">Agent door · MCP</p>
+          <h1 data-route-heading tabIndex={-1}>
+            Same catalog. Same checkout. For agents.
+          </h1>
+        </div>
+        <p>
+          An external agent uses the same first-party tools as Concierge. Discovery is honest:
+          Razorpay test mode, no live settlement, not certified for UCP, ACP, AP2, Gemini, or
+          Alexa.
+        </p>
+      </header>
+
+      <dl className="agent-endpoints">
+        <div>
+          <dt>Discovery</dt>
+          <dd>
+            <a href="/.well-known/charter-commerce.json">/.well-known/charter-commerce.json</a>
+          </dd>
+        </div>
+        <div>
+          <dt>Alias</dt>
+          <dd>
+            <a href="/api/.well-known/agent-commerce">/api/.well-known/agent-commerce</a>
+          </dd>
+        </div>
+        <div>
+          <dt>MCP tools</dt>
+          <dd>
+            <a href="/mcp/tools">GET /mcp/tools</a>
+          </dd>
+        </div>
+        <div>
+          <dt>MCP call</dt>
+          <dd>
+            <code>POST /mcp/call</code>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="agent-split">
+        <article>
+          <h2>How an agent transacts</h2>
+          <ol className="agent-steps">
+            <li>Read discovery. Check <code>liveSettlement: false</code> and <code>notCertified</code>.</li>
+            <li>
+              Search a published shop with <code>catalog.search</code> (no login). Example slug:{' '}
+              <code>northstar</code>.
+            </li>
+            <li>Sign in as a buyer. Send that JWT on mutating tools.</li>
+            <li>
+              Create a cart, freeze a quote, then <code>checkout.complete</code>. Card data never
+              enters Charter — hosted Razorpay Checkout is the credential boundary.
+            </li>
+            <li>
+              After a failed pay, <code>checkout.resume</code> reconciles the Order. An unchanged
+              quote retries the same Razorpay Order.
+            </li>
+          </ol>
+        </article>
+        <aside className="agent-limits" aria-label="What this door is not">
+          <p>THE CONTRACT</p>
+          <ul>
+            <li>Adapter holds no database or Razorpay keys.</li>
+            <li>
+              Caller-supplied <code>path</code> is ignored. Tools resolve only first-party{' '}
+              <code>/api</code>.
+            </li>
+            <li>
+              Not certified: {CHARTER_COMMERCE_NOT_CERTIFIED.join(', ')}.
+            </li>
+            <li>
+              Voice Talk is the spoken human door. MCP is the machine door. Both use the same
+              commerce core.
+            </li>
+          </ul>
+        </aside>
+      </div>
+
+      <h2>Tools</h2>
+      <div className="agent-tools-wrap">
+        <table className="agent-tools">
+          <caption>MCP tools map to first-party HTTP. Mutations require a buyer JWT.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Tool</th>
+              <th scope="col">Auth</th>
+              <th scope="col">What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CHARTER_COMMERCE_TOOLS.map((tool) => (
+              <tr key={tool.name}>
+                <th scope="row">
+                  <code>{tool.name}</code>
+                </th>
+                <td>{tool.auth === 'bearer' ? 'Buyer JWT' : 'Public'}</td>
+                <td>{tool.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="editorial-actions">
+        <Link className="primary-link" to="/shops">
+          Browse shops an agent can bind
+        </Link>
+        <Link className="quiet-link" to="/auth/sign-in">
+          Sign in to get a buyer JWT
+        </Link>
+      </div>
     </section>
   );
 }

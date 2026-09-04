@@ -1215,7 +1215,8 @@ form.composer .composer-box button[type='submit']:disabled {
 .directory-page,
 .shop-detail,
 .merchant-index,
-.account-page {
+.account-page,
+.agents-page {
   width: min(76rem, calc(100% - 2rem));
   margin: 0 auto;
   padding: clamp(2rem, 6vw, 5.5rem) 0 4rem;
@@ -1247,6 +1248,121 @@ form.composer .composer-box button[type='submit']:disabled {
   max-width: 42ch;
   margin: 0;
   color: var(--muted);
+}
+
+.agent-endpoints {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1px;
+  margin: 0 0 2.5rem;
+  background: rgba(11, 18, 32, 0.18);
+  border: 1px solid rgba(11, 18, 32, 0.22);
+}
+
+.agent-endpoints > div {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.agent-endpoints dt {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.agent-endpoints a,
+.agent-endpoints code {
+  color: inherit;
+  font-size: 0.92rem;
+  word-break: break-all;
+}
+
+.agent-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(16rem, 0.7fr);
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+.agent-split h2,
+.agents-page > h2 {
+  margin: 0 0 1rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 520;
+}
+
+.agent-steps {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.agent-steps li {
+  margin: 0.65rem 0;
+  max-width: 58ch;
+}
+
+.agent-limits {
+  padding: 1.1rem;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid rgba(11, 18, 32, 0.35);
+}
+
+.agent-limits > p {
+  margin: 0 0 1rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+}
+
+.agent-limits ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.agent-limits li {
+  margin: 0.55rem 0;
+}
+
+.agent-tools-wrap {
+  overflow-x: auto;
+  margin: 0 0 2rem;
+  border: 1px solid rgba(11, 18, 32, 0.22);
+}
+
+.agent-tools {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.agent-tools caption {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  color: var(--muted);
+  caption-side: bottom;
+}
+
+.agent-tools th,
+.agent-tools td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid rgba(11, 18, 32, 0.14);
+  text-align: left;
+  vertical-align: top;
+}
+
+.agent-tools thead th {
+  border-top: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.agents-page .editorial-actions {
+  margin-top: 0.5rem;
 }
 
 .directory-page .shop-grid {
@@ -2879,7 +2995,8 @@ form.composer .composer-box button[type='submit']:disabled {
   .editorial-head,
   .workspace-head,
   .merchant-mast,
-  .control-mast {
+  .control-mast,
+  .agent-split {
     display: grid;
     grid-template-columns: 1fr;
   }

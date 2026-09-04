@@ -93,6 +93,13 @@ test.describe('Charter evaluator journeys', () => {
     expect(sitemap.ok()).toBeTruthy();
     const sitemapText = await sitemap.text();
     expect(sitemapText).toContain('/shops/northstar');
+    expect(sitemapText).toContain('/agents');
+
+    const agents = await request.get('/agents');
+    expect(agents.ok()).toBeTruthy();
+    expect(agents.headers()['content-type'] ?? '').toMatch(/text\/html/i);
+    const agentsHtml = await agents.text();
+    expect(agentsHtml).toMatch(/Agents and MCP/i);
 
     const shops = await request.get('/shops');
     expect(shops.ok()).toBeTruthy();
@@ -117,6 +124,12 @@ test.describe('Charter evaluator journeys', () => {
     await expect(page.getByRole('heading', { name: 'Shop directory' })).toBeVisible();
     await expect(page.getByLabel('Search shops and products')).toBeVisible();
 
+    await page.goto('/agents');
+    await expect(
+      page.getByRole('heading', { name: /Same catalog. Same checkout. For agents./i }),
+    ).toBeVisible();
+    await expect(page.getByText('catalog.search')).toBeVisible();
+
     await page.goto('/auth/sign-in');
     await expect(page.getByRole('heading', { name: 'Sign in to Charter' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
@@ -140,6 +153,11 @@ test.describe('Charter evaluator journeys', () => {
       path: '/shops/northstar',
       heading: null,
       requiresNorthstar: true,
+    },
+    {
+      path: '/agents',
+      heading: /Same catalog. Same checkout. For agents./i,
+      requiresNorthstar: false,
     },
     {
       path: '/auth/sign-in',
