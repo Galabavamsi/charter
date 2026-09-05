@@ -1282,7 +1282,7 @@ export function NorthstarDemo({
               state={voiceOrbState(voicePhase)!}
               label={voiceStatusCopy(voicePhase, voicePhase === 'error' ? status : null)}
               size={64}
-              theme="dark"
+              theme="light"
             />
           ) : null}
         </div>

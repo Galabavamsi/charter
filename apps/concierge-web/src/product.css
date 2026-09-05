@@ -509,10 +509,7 @@ form.composer .composer-box button[type='submit']:disabled {
   min-height: 5.5rem;
   padding: 1.05rem 1.35rem;
   gap: 1.15rem;
-  background: #0b1220;
-  color: #f5f8fb;
   font-size: 1.08rem;
-  box-shadow: 0 18px 40px rgba(11, 18, 32, 0.35);
 }
 
 .transcript .process-orb-voice canvas {
@@ -1412,10 +1409,26 @@ body[data-page='landing'] .sidebar-shop a {
   color: rgba(11, 18, 32, 0.6);
 }
 
-body[data-page='landing'] .new-chat-link,
+body[data-page='landing'] .new-chat-link {
+  border-bottom-color: rgba(11, 18, 32, 0.18);
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
 body[data-page='landing'] .product-sidebar .thread-row a[aria-current='page'] {
   border-color: var(--glass-stroke);
   background: var(--glass-fill-strong);
+}
+
+body[data-page='landing'] .process-orb,
+body[data-page='landing'] .process-orb-voice {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  color: var(--ink);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 body[data-page='landing'] .workspace-head,
@@ -1988,13 +2001,25 @@ body[data-page='landing'] .chat-col {
 }
 
 .new-chat-link {
-  margin-top: 0.15rem;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.08);
+  margin: 0 0 0.35rem;
+  padding: 0.35rem 0.15rem 0.85rem;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: #fff;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 520;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.new-chat-link:hover {
+  opacity: 0.88;
 }
 
 .sidebar-label {
-  margin: 1.2rem 0.7rem 0.4rem;
+  margin: 1rem 0.15rem 0.4rem;
   font-size: 0.66rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
