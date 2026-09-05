@@ -23,6 +23,7 @@ import {
   type PublicShopResponse,
   type ShopFilterParams,
 } from '../shops';
+import { LandingFilm } from '../LandingFilm';
 import { RouteStatus } from '../route-guards';
 
 export function HomePage() {
@@ -39,48 +40,23 @@ export function HomePage() {
     return <Navigate replace to={DEFAULT_SIGNED_IN_PATH} />;
   }
   return (
-    <section className="home-page fade">
-      <div className="home-copy">
-        <p className="eyebrow">One conversation to pay</p>
+    <section className="home-page home-hero">
+      <LandingFilm />
+      <div className="home-copy fade">
+        <p className="eyebrow">Bounded commerce</p>
         <h1 data-route-heading tabIndex={-1}>
-          Tell Concierge what you want. Pay a frozen amount.
+          Shop by talking.
         </h1>
-        <p className="home-lede">
-          Sign in, describe a gift, a tee, coffee gear, or a notebook, pick a shop, and pay in the
-          same chat. Browse catalogs if you already know the shop.
-        </p>
+        <p className="home-lede">One conversation. A frozen total. Pay on Razorpay.</p>
         <div className="editorial-actions">
           <Link className="primary-link" to="/auth/sign-in">
-            Sign in to Concierge
+            Start shopping
           </Link>
           <Link className="quiet-link" to="/shops">
-            Browse catalogs
-          </Link>
-          <Link className="quiet-link" to="/agents">
-            Agent / MCP door
-          </Link>
-          <Link className="quiet-link" to="/auth/sign-up?next=%2Fmerchant">
-            Open a merchant desk
+            Browse shops
           </Link>
         </div>
       </div>
-      <aside className="home-ledger" aria-label="Charter operating principles">
-        <p>THE CHARTER</p>
-        <ol>
-          <li>
-            <span>01</span>
-            The amount is bounded by shop policy.
-          </li>
-          <li>
-            <span>02</span>
-            Every charge maps to a locked total.
-          </li>
-          <li>
-            <span>03</span>
-            Fulfillment waits for captured money.
-          </li>
-        </ol>
-      </aside>
     </section>
   );
 }
@@ -103,8 +79,9 @@ function useAgentsSeo() {
 export function AgentsPage() {
   useAgentsSeo();
   return (
-    <section className="directory-page agents-page fade">
-      <header className="editorial-head">
+    <section className="directory-page agents-page">
+      <LandingFilm />
+      <header className="editorial-head fade">
         <div>
           <p className="eyebrow">Agent door · MCP</p>
           <h1 data-route-heading tabIndex={-1}>
@@ -663,8 +640,9 @@ export function ShopsPage() {
   };
 
   return (
-    <section className="directory-page fade">
-      <header className="directory-mast">
+    <section className="directory-page">
+      <LandingFilm />
+      <header className="directory-mast fade">
         <div>
           <p className="eyebrow">Independent catalogs · public to browse</p>
           <h1 data-route-heading tabIndex={-1}>
@@ -820,19 +798,23 @@ export function ShopPage() {
   if (state === 'loading' && !result) {
     return (
       <section className="storefront-page">
+        <LandingFilm />
         <LoadingGrid label="Loading shop catalog" />
       </section>
     );
   }
   if (state === 'error' && !result) {
     return (
-      <div className="directory-message storefront-error" role="alert">
-        <h1 data-route-heading tabIndex={-1}>
-          We couldn’t open this shop
-        </h1>
-        <button type="button" onClick={() => setRetry((value) => value + 1)}>
-          Try again
-        </button>
+      <div className="storefront-page">
+        <LandingFilm />
+        <div className="directory-message storefront-error" role="alert">
+          <h1 data-route-heading tabIndex={-1}>
+            We couldn’t open this shop
+          </h1>
+          <button type="button" onClick={() => setRetry((value) => value + 1)}>
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
@@ -877,7 +859,8 @@ export function ShopPage() {
   };
 
   return (
-    <article className="storefront-page fade">
+    <article className="storefront-page">
+      <LandingFilm />
       <Link className="back-link" to="/shops">
         Back to shops
       </Link>

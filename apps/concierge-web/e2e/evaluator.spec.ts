@@ -117,7 +117,7 @@ test.describe('Charter evaluator journeys', () => {
   test('public home, directory, and auth labels', async ({ page }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: /Tell Concierge what you want/i }),
+      page.getByRole('heading', { name: /Shop by talking/i }),
     ).toBeVisible();
 
     await page.goto('/shops');
@@ -141,7 +141,7 @@ test.describe('Charter evaluator journeys', () => {
   const publicA11ySurfaces = [
     {
       path: '/',
-      heading: /Tell Concierge what you want/i,
+      heading: /Shop by talking/i,
       requiresNorthstar: false,
     },
     {

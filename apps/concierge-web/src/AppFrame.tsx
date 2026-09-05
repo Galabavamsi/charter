@@ -8,6 +8,16 @@ function isTransientRouteHeading(heading: HTMLElement): boolean {
   return /checking your session|loading account access/i.test(heading.textContent ?? '');
 }
 
+function isPublicFilmPath(pathname: string): boolean {
+  return (
+    pathname === '/' ||
+    pathname.startsWith('/auth/') ||
+    pathname === '/agents' ||
+    pathname === '/shops' ||
+    pathname.startsWith('/shops/')
+  );
+}
+
 function RouteFocus() {
   const location = useLocation();
 
@@ -55,7 +65,7 @@ export function AppFrame() {
   const menu = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    document.body.dataset.page = location.pathname === '/' ? 'landing' : 'app';
+    document.body.dataset.page = isPublicFilmPath(location.pathname) ? 'landing' : 'app';
     setMenuOpen(false);
     return () => {
       delete document.body.dataset.page;

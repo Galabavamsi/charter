@@ -546,3 +546,52 @@ describe('agents route', () => {
     expect(screen.getByText(/Not certified: UCP, ACP, AP2, Gemini, Alexa/i)).toBeVisible();
   });
 });
+
+describe('public landing', () => {
+  it('plays a looping film behind a short product pitch', async () => {
+    renderAt('/', vi.fn(async () => ({})) as ApiClient);
+    expect(await screen.findByRole('heading', { name: 'Shop by talking.' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Start shopping' })).toHaveAttribute(
+      'href',
+      '/auth/sign-in',
+    );
+    expect(screen.getByRole('link', { name: 'Browse shops' })).toHaveAttribute('href', '/shops');
+    const film = document.querySelector('.home-hero-media video');
+    expect(film).toHaveAttribute('autoplay');
+    expect(film).toHaveAttribute('loop');
+    expect(film?.querySelector('source')).toHaveAttribute('src', '/media/landing-loop.mp4');
+  });
+
+  it('uses the same looping film behind sign-in', async () => {
+    renderAt('/auth/sign-in', vi.fn(async () => ({})) as ApiClient);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Charter' })).toBeVisible();
+    const film = document.querySelector('.home-hero-media video');
+    expect(film).toHaveAttribute('autoplay');
+    expect(film).toHaveAttribute('loop');
+    expect(film?.querySelector('source')).toHaveAttribute('src', '/media/landing-loop.mp4');
+  });
+
+  it('uses the same looping film behind the shop directory', async () => {
+    const api = vi.fn(async () => ({
+      items: [],
+      total: 0,
+      nextCursor: null,
+      facets,
+    })) as ApiClient;
+    renderAt('/shops', api);
+    expect(await screen.findByRole('heading', { name: 'Shop directory' })).toBeVisible();
+    expect(document.querySelector('.home-hero-media source')).toHaveAttribute(
+      'src',
+      '/media/landing-loop.mp4',
+    );
+  });
+
+  it('uses the same looping film behind agents', async () => {
+    renderAt('/agents', vi.fn(async () => ({})) as ApiClient);
+    expect(await screen.findByRole('heading', { name: /Same catalog/i })).toBeVisible();
+    expect(document.querySelector('.home-hero-media source')).toHaveAttribute(
+      'src',
+      '/media/landing-loop.mp4',
+    );
+  });
+});

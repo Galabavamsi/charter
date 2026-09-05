@@ -1,3 +1,13 @@
+:root {
+  --glass-fill: rgba(255, 255, 255, 0.28);
+  --glass-fill-strong: rgba(255, 255, 255, 0.4);
+  --glass-stroke: rgba(255, 255, 255, 0.58);
+  --glass-blur: blur(36px) saturate(180%);
+  --glass-shadow:
+    0 18px 48px rgba(8, 18, 38, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
 body[data-page='app'],
 body[data-page='login'] {
   background: var(--sky);
@@ -980,9 +990,12 @@ form.composer .composer-box button[type='submit']:disabled {
 }
 
 .auth-actions .header-cta {
-  border-color: rgba(11, 18, 32, 0.78);
-  background: var(--ink);
-  color: #fff;
+  border-color: var(--glass-stroke);
+  background: var(--glass-fill);
+  color: var(--ink);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .account-trigger {
@@ -1139,6 +1152,60 @@ form.composer .composer-box button[type='submit']:disabled {
   padding: clamp(3rem, 9vw, 8rem) clamp(1rem, 6vw, 6rem) clamp(3rem, 7vw, 6rem);
 }
 
+.home-page.home-hero {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  grid-template-columns: none;
+  padding: clamp(5.5rem, 14vh, 8rem) clamp(1.2rem, 6vw, 6rem) clamp(4rem, 10vh, 6rem);
+}
+
+.home-hero-media {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #4292f4 url('/media/landing-poster.jpg') center / cover no-repeat;
+}
+
+.home-hero-media video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 72% center;
+  pointer-events: none;
+}
+
+.home-hero-media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(8, 18, 38, 0.58) 0%, rgba(8, 18, 38, 0.22) 46%, transparent 74%),
+    linear-gradient(180deg, rgba(8, 18, 38, 0.18) 0%, transparent 28%, rgba(8, 18, 38, 0.28) 100%);
+}
+
+.home-hero .home-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 22rem;
+}
+
+.home-hero .eyebrow,
+.home-hero .home-lede {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.home-hero .quiet-link {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
 .home-copy h1 {
   max-width: 13ch;
   margin: 0.5rem 0 1.25rem;
@@ -1149,11 +1216,161 @@ form.composer .composer-box button[type='submit']:disabled {
   letter-spacing: -0.055em;
 }
 
+.home-hero .home-copy h1 {
+  color: #fff;
+  text-shadow: 0 12px 40px rgba(8, 18, 38, 0.28);
+}
+
 .home-lede {
   max-width: 48ch;
   margin-bottom: 1.6rem;
   color: rgba(11, 18, 32, 0.72);
   font-size: clamp(1rem, 1.5vw, 1.2rem);
+}
+
+body[data-page='landing'] {
+  background: #4292f4;
+}
+
+body[data-page='landing'] .site-shell {
+  min-height: 100dvh;
+}
+
+body[data-page='landing'] .route-stage {
+  min-height: 100dvh;
+}
+
+body[data-page='landing'] .global-header {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body[data-page='landing'] .wordmark,
+body[data-page='landing'] .global-nav a,
+body[data-page='landing'] .auth-actions a,
+body[data-page='landing'] .header-status {
+  color: #fff;
+}
+
+body[data-page='landing'] .wordmark small {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+body[data-page='landing'] .auth-actions .header-cta {
+  border-color: var(--glass-stroke);
+  background: var(--glass-fill);
+  color: #fff;
+}
+
+body[data-page='landing'] .site-footer {
+  position: relative;
+  z-index: 2;
+  border: 0;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
+}
+
+body[data-page='landing'] .site-footer span:first-child {
+  color: #fff;
+}
+
+body[data-page='landing']:has(.home-hero) {
+  overflow: hidden;
+}
+
+body[data-page='landing']:has(.home-hero) .site-shell {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body[data-page='landing']:has(.home-hero) .global-header,
+body[data-page='landing']:has(.home-hero) .site-footer {
+  position: absolute;
+  width: 100%;
+}
+
+body[data-page='landing']:has(.home-hero) .global-header {
+  inset: 0 0 auto;
+}
+
+body[data-page='landing']:has(.home-hero) .site-footer {
+  inset: auto 0 0;
+}
+
+body[data-page='landing'] .auth-page {
+  position: relative;
+  z-index: 1;
+  width: min(72rem, calc(100% - 2.4rem));
+  min-height: 100dvh;
+  padding: clamp(5.5rem, 12vh, 7rem) 0 4.5rem;
+}
+
+body[data-page='landing'] .auth-context .eyebrow,
+body[data-page='landing'] .auth-context h2 {
+  color: #fff;
+  text-shadow: 0 12px 40px rgba(8, 18, 38, 0.28);
+}
+
+body[data-page='landing'] .auth-context p:last-child {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+body[data-page='landing'] .auth-sheet {
+  position: relative;
+  z-index: 1;
+  background: var(--glass-fill);
+  border-color: var(--glass-stroke);
+}
+
+body[data-page='landing'] .directory-page,
+body[data-page='landing'] .storefront-page {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-page='landing'] .directory-mast,
+body[data-page='landing'] .editorial-head,
+body[data-page='landing'] .storefront-mast {
+  border-bottom-color: rgba(255, 255, 255, 0.28);
+}
+
+body[data-page='landing'] .directory-mast h1,
+body[data-page='landing'] .editorial-head h1,
+body[data-page='landing'] .storefront-mast h1,
+body[data-page='landing'] .agents-page h2,
+body[data-page='landing'] .agent-split h2 {
+  color: #fff;
+  text-shadow: 0 12px 40px rgba(8, 18, 38, 0.28);
+}
+
+body[data-page='landing'] .directory-page .eyebrow,
+body[data-page='landing'] .storefront-page .eyebrow,
+body[data-page='landing'] .directory-mast > p:last-child,
+body[data-page='landing'] .editorial-head > p,
+body[data-page='landing'] .storefront-mast > p,
+body[data-page='landing'] .storefront-refund,
+body[data-page='landing'] .result-count,
+body[data-page='landing'] .back-link {
+  color: rgba(255, 255, 255, 0.84);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-media video {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-fill: rgba(255, 255, 255, 0.86);
+    --glass-fill-strong: rgba(255, 255, 255, 0.94);
+    --glass-blur: none;
+  }
 }
 
 .editorial-actions {
@@ -1256,17 +1473,26 @@ form.composer .composer-box button[type='submit']:disabled {
 .agent-endpoints {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  gap: 1px;
+  gap: 0;
   margin: 0 0 2.5rem;
-  background: rgba(11, 18, 32, 0.18);
-  border: 1px solid rgba(11, 18, 32, 0.22);
+  overflow: hidden;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .agent-endpoints > div {
   display: grid;
   gap: 0.35rem;
   padding: 1rem 1.1rem;
-  background: rgba(255, 255, 255, 0.35);
+  background: transparent;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.28);
+}
+
+.agent-endpoints > div:last-child {
+  box-shadow: none;
 }
 
 .agent-endpoints dt {
@@ -1308,10 +1534,14 @@ form.composer .composer-box button[type='submit']:disabled {
   max-width: 58ch;
 }
 
+.agent-split > article,
 .agent-limits {
-  padding: 1.1rem;
-  border-top: 2px solid var(--ink);
-  border-bottom: 1px solid rgba(11, 18, 32, 0.35);
+  padding: 1.25rem 1.3rem;
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .agent-limits > p {
@@ -1333,7 +1563,11 @@ form.composer .composer-box button[type='submit']:disabled {
 .agent-tools-wrap {
   overflow-x: auto;
   margin: 0 0 2rem;
-  border: 1px solid rgba(11, 18, 32, 0.22);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .agent-tools {
@@ -1370,9 +1604,9 @@ form.composer .composer-box button[type='submit']:disabled {
 
 .directory-page .shop-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
-  gap: 1px;
-  background: rgba(11, 18, 32, 0.22);
-  border: 1px solid rgba(11, 18, 32, 0.22);
+  gap: 0.85rem;
+  background: transparent;
+  border: 0;
 }
 
 .directory-page .shop-card {
@@ -1381,8 +1615,11 @@ form.composer .composer-box button[type='submit']:disabled {
   gap: 0.75rem;
   justify-content: flex-start;
   padding: 1.2rem;
-  border: 0;
-  background: rgba(232, 243, 251, 0.78);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   text-decoration: none;
   transition:
     background 180ms ease,
@@ -1392,7 +1629,7 @@ form.composer .composer-box button[type='submit']:disabled {
 .directory-page .shop-card:hover {
   z-index: 1;
   transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--glass-fill-strong);
   box-shadow: 0 16px 35px rgba(11, 18, 32, 0.13);
 }
 
@@ -1509,10 +1746,11 @@ form.composer .composer-box button[type='submit']:disabled {
 
 .auth-sheet {
   padding: clamp(1.25rem, 4vw, 2.25rem);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(232, 243, 251, 0.72);
-  box-shadow: 0 30px 70px rgba(11, 18, 32, 0.18);
-  backdrop-filter: blur(22px);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .auth-sheet h1 {
@@ -1538,6 +1776,13 @@ form.composer .composer-box button[type='submit']:disabled {
 .control-mast select {
   min-height: 2.75rem;
   border-radius: 0;
+}
+
+.auth-sheet input {
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .auth-sheet button[type='submit'] {
@@ -2383,10 +2628,11 @@ form.composer .composer-box button[type='submit']:disabled {
   gap: 0.85rem;
   margin: 1rem 0 1.25rem;
   padding: 1rem;
-  border: 1px solid rgba(11, 18, 32, 0.28);
-  background: rgba(232, 243, 251, 0.74);
-  box-shadow: 0 14px 38px rgba(11, 18, 32, 0.08);
-  backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .directory-search label,
@@ -2554,9 +2800,9 @@ form.composer .composer-box button[type='submit']:disabled {
 .directory-skeleton {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  border: 1px solid rgba(11, 18, 32, 0.28);
-  background: rgba(11, 18, 32, 0.28);
+  gap: 0.85rem;
+  border: 0;
+  background: transparent;
 }
 
 .directory-page .shop-card {
@@ -2567,9 +2813,12 @@ form.composer .composer-box button[type='submit']:disabled {
   flex-direction: column;
   gap: 0.7rem;
   padding: 1.15rem;
-  border: 0;
+  border: 1px solid var(--glass-stroke);
   border-radius: 0;
-  background: rgba(232, 243, 251, 0.88);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   color: var(--ink);
   text-decoration: none;
   transition:
@@ -2591,7 +2840,7 @@ form.composer .composer-box button[type='submit']:disabled {
 .directory-page .shop-card:hover {
   z-index: 1;
   transform: none;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--glass-fill-strong);
   box-shadow: 0 18px 40px rgba(11, 18, 32, 0.14);
 }
 
@@ -2698,8 +2947,11 @@ form.composer .composer-box button[type='submit']:disabled {
 .directory-message {
   margin: 1rem 0;
   padding: clamp(1.2rem, 4vw, 2.4rem);
-  border: 1px solid rgba(11, 18, 32, 0.28);
-  background: rgba(232, 243, 251, 0.76);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .directory-message h1,
@@ -2724,7 +2976,10 @@ form.composer .composer-box button[type='submit']:disabled {
   align-content: start;
   gap: 0.75rem;
   padding: 1.2rem;
-  background: rgba(232, 243, 251, 0.72);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .skeleton-card span {
@@ -2797,7 +3052,11 @@ form.composer .composer-box button[type='submit']:disabled {
   display: flex;
   flex-direction: column;
   padding: 1rem;
-  background: rgba(232, 243, 251, 0.9);
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .catalog-card-head {
@@ -2895,8 +3154,21 @@ form.composer .composer-box button[type='submit']:disabled {
     grid-template-columns: 1fr;
   }
 
+  .agent-endpoints > div {
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.28);
+  }
+
+  .agent-endpoints > div:last-child {
+    box-shadow: none;
+  }
+
   .home-page {
     align-items: start;
+  }
+
+  .home-page.home-hero {
+    align-items: center;
+    min-height: 100dvh;
   }
 
   .home-ledger {
@@ -3016,6 +3288,11 @@ form.composer .composer-box button[type='submit']:disabled {
   .home-page {
     min-height: auto;
     padding-top: 3.5rem;
+  }
+
+  .home-page.home-hero {
+    min-height: 100dvh;
+    padding-top: 5.5rem;
   }
 
   .home-copy h1 {
