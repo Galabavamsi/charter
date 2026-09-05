@@ -1359,6 +1359,124 @@ body[data-page='landing'] .back-link {
   color: rgba(255, 255, 255, 0.84);
 }
 
+body[data-page='landing'] .product-shell,
+body[data-page='landing'] .merchant-shell,
+body[data-page='landing'] .control-shell,
+body[data-page='landing'] .account-page,
+body[data-page='landing'] .merchant-index {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-page='landing'] .global-nav a[aria-current='page'],
+body[data-page='landing'] .account-trigger {
+  border-color: var(--glass-stroke);
+  background: var(--glass-fill);
+  color: #fff;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+body[data-page='landing'] .account-menu {
+  background: var(--glass-fill);
+  border-color: var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+body[data-page='landing'] .product-sidebar,
+body[data-page='landing'] .merchant-nav {
+  background: var(--glass-fill);
+  color: var(--ink);
+  border-right: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+body[data-page='landing'] .product-sidebar a,
+body[data-page='landing'] .product-sidebar button,
+body[data-page='landing'] .new-chat-link,
+body[data-page='landing'] .thread-title,
+body[data-page='landing'] .sidebar-guide {
+  color: var(--ink);
+}
+
+body[data-page='landing'] .sidebar-label,
+body[data-page='landing'] .thread-shop,
+body[data-page='landing'] .empty-threads,
+body[data-page='landing'] .sidebar-shop .eyebrow,
+body[data-page='landing'] .sidebar-shop a {
+  color: rgba(11, 18, 32, 0.6);
+}
+
+body[data-page='landing'] .new-chat-link,
+body[data-page='landing'] .product-sidebar .thread-row a[aria-current='page'] {
+  border-color: var(--glass-stroke);
+  background: var(--glass-fill-strong);
+}
+
+body[data-page='landing'] .workspace-head,
+body[data-page='landing'] .merchant-mast,
+body[data-page='landing'] .control-mast {
+  background: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.28);
+}
+
+body[data-page='landing'] .workspace-head h1,
+body[data-page='landing'] .merchant-mast h1,
+body[data-page='landing'] .control-mast h1,
+body[data-page='landing'] .account-page h1,
+body[data-page='landing'] .merchant-index h1,
+body[data-page='landing'] .buyer-home h1,
+body[data-page='landing'] .blank h2 {
+  color: #fff;
+  text-shadow: 0 12px 40px rgba(8, 18, 38, 0.28);
+}
+
+body[data-page='landing'] .shop-binding,
+body[data-page='landing'] .workspace-head > p,
+body[data-page='landing'] .workspace-head .grounded-note,
+body[data-page='landing'] .blank p,
+body[data-page='landing'] .composer-note,
+body[data-page='landing'] .account-page > p,
+body[data-page='landing'] .merchant-index > p,
+body[data-page='landing'] .merchant-context-line {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+body[data-page='landing'] .bubble,
+body[data-page='landing'] .composer-box,
+body[data-page='landing'] .starter-chips button,
+body[data-page='landing'] .shop-pick,
+body[data-page='landing'] .product-shell button.shop-pick,
+body[data-page='landing'] .product-card,
+body[data-page='landing'] .onboard-card,
+body[data-page='landing'] .route-status,
+body[data-page='landing'] .workspace-placeholder,
+body[data-page='landing'] .buyer-home-shops a,
+body[data-page='landing'] .member-shop-list,
+body[data-page='landing'] .merchant-page,
+body[data-page='landing'] .merchant-record-form,
+body[data-page='landing'] .merchant-state,
+body[data-page='landing'] .control-shell > .board {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+body[data-page='landing'] .bubble[data-role='you'] {
+  background: var(--glass-fill-strong);
+}
+
+body[data-page='landing'] .chat-col {
+  border-right: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-hero-media video {
     display: none;

@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { authErrorMessage, useAuth } from '../auth';
 import { DEFAULT_SIGNED_IN_PATH, safeNextPath } from '../navigation';
-import { LandingFilm } from '../LandingFilm';
 import { RouteStatus } from '../route-guards';
 
 function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
@@ -64,7 +63,6 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const creating = mode === 'sign-up';
   return (
     <section className="auth-page">
-      <LandingFilm />
       <div className="auth-context fade">
         <p className="eyebrow">A verified account, many roles</p>
         <h2>Buy from a shop and operate the shops you belong to.</h2>

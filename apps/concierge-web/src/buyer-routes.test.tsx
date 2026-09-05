@@ -154,6 +154,15 @@ afterEach(() => {
 });
 
 describe('authenticated Concierge home', () => {
+  it('plays the looping film behind Concierge', async () => {
+    renderAt('/chats');
+    expect(await screen.findByRole('heading', { name: 'Concierge' })).toBeVisible();
+    expect(document.querySelector('.home-hero-media source')).toHaveAttribute(
+      'src',
+      '/media/landing-loop.mp4',
+    );
+  });
+
   it('keeps /chats as one Concierge and lists chats across shops without duplicates', async () => {
     upsertThread(
       { userId: 'user-buyer', shopId: 'northstar-demo-in' },

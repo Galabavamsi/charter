@@ -3,19 +3,10 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useAccount } from './account';
 import { useAuth } from './auth';
 import { canReadControl } from './capabilities';
+import { LandingFilm } from './LandingFilm';
 
 function isTransientRouteHeading(heading: HTMLElement): boolean {
   return /checking your session|loading account access/i.test(heading.textContent ?? '');
-}
-
-function isPublicFilmPath(pathname: string): boolean {
-  return (
-    pathname === '/' ||
-    pathname.startsWith('/auth/') ||
-    pathname === '/agents' ||
-    pathname === '/shops' ||
-    pathname.startsWith('/shops/')
-  );
 }
 
 function RouteFocus() {
@@ -65,7 +56,7 @@ export function AppFrame() {
   const menu = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    document.body.dataset.page = isPublicFilmPath(location.pathname) ? 'landing' : 'app';
+    document.body.dataset.page = 'landing';
     setMenuOpen(false);
     return () => {
       delete document.body.dataset.page;
@@ -107,6 +98,7 @@ export function AppFrame() {
 
   return (
     <div className="site-shell">
+      <LandingFilm />
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>

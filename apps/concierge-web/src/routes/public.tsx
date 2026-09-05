@@ -23,7 +23,6 @@ import {
   type PublicShopResponse,
   type ShopFilterParams,
 } from '../shops';
-import { LandingFilm } from '../LandingFilm';
 import { RouteStatus } from '../route-guards';
 
 export function HomePage() {
@@ -41,7 +40,6 @@ export function HomePage() {
   }
   return (
     <section className="home-page home-hero">
-      <LandingFilm />
       <div className="home-copy fade">
         <p className="eyebrow">Bounded commerce</p>
         <h1 data-route-heading tabIndex={-1}>
@@ -80,7 +78,6 @@ export function AgentsPage() {
   useAgentsSeo();
   return (
     <section className="directory-page agents-page">
-      <LandingFilm />
       <header className="editorial-head fade">
         <div>
           <p className="eyebrow">Agent door · MCP</p>
@@ -641,7 +638,6 @@ export function ShopsPage() {
 
   return (
     <section className="directory-page">
-      <LandingFilm />
       <header className="directory-mast fade">
         <div>
           <p className="eyebrow">Independent catalogs · public to browse</p>
@@ -798,23 +794,19 @@ export function ShopPage() {
   if (state === 'loading' && !result) {
     return (
       <section className="storefront-page">
-        <LandingFilm />
         <LoadingGrid label="Loading shop catalog" />
       </section>
     );
   }
   if (state === 'error' && !result) {
     return (
-      <div className="storefront-page">
-        <LandingFilm />
-        <div className="directory-message storefront-error" role="alert">
-          <h1 data-route-heading tabIndex={-1}>
-            We couldn’t open this shop
-          </h1>
-          <button type="button" onClick={() => setRetry((value) => value + 1)}>
-            Try again
-          </button>
-        </div>
+      <div className="directory-message storefront-error" role="alert">
+        <h1 data-route-heading tabIndex={-1}>
+          We couldn’t open this shop
+        </h1>
+        <button type="button" onClick={() => setRetry((value) => value + 1)}>
+          Try again
+        </button>
       </div>
     );
   }
@@ -860,7 +852,6 @@ export function ShopPage() {
 
   return (
     <article className="storefront-page">
-      <LandingFilm />
       <Link className="back-link" to="/shops">
         Back to shops
       </Link>
