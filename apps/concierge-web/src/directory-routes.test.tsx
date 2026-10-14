@@ -541,8 +541,8 @@ describe('agents route', () => {
     expect(screen.getByRole('link', { name: 'Agents' })).toBeVisible();
     expect(screen.getByRole('link', { name: /well-known\/charter-commerce\.json/i })).toBeVisible();
     expect(screen.getByRole('link', { name: 'GET /mcp/tools' })).toBeVisible();
-    expect(screen.getByRole('row', { name: /catalog\.search/i })).toBeVisible();
-    expect(screen.getByRole('row', { name: /checkout\.complete/i })).toBeVisible();
+    expect(screen.getByRole('row', { name: /catalog_search/i })).toBeVisible();
+    expect(screen.getByRole('row', { name: /checkout_complete/i })).toBeVisible();
     expect(screen.getByText(/Not certified: UCP, ACP, AP2, Gemini, Alexa/i)).toBeVisible();
   });
 });
