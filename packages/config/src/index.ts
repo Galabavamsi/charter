@@ -81,6 +81,9 @@ export const envSchema = z
     SUPABASE_JWT_ISSUER: optionalUrl.optional().default(''),
     SUPABASE_JWT_AUDIENCE: z.string().min(1).optional().default('authenticated'),
     SUPABASE_JWT_JWKS_URL: optionalUrl.optional().default(''),
+    // Demo spending caps: text + voice turns per buyer and per deployment, reset at UTC midnight.
+    CHARTER_DAILY_TURNS_PER_USER: z.coerce.number().int().positive().default(40),
+    CHARTER_DAILY_TURNS_GLOBAL: z.coerce.number().int().positive().default(400),
   })
   .superRefine((value, ctx) => {
     const keys = [value.RAZORPAY_KEY_ID, value.RAZORPAY_KEY_SECRET].filter(Boolean);
@@ -167,7 +170,19 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
-    const message = parsed.error.issues.map((issue) => issue.message).join('; ');
+    // Name the variable, never its value: env values can be secrets, and zod's
+    // built-in messages echo what they received, so only custom codes pass through.
+    const message = parsed.error.issues
+      .map((issue) => {
+        const reason =
+          issue.code === z.ZodIssueCode.custom
+            ? issue.message
+            : issue.code === z.ZodIssueCode.invalid_enum_value
+              ? `${issue.code} (expected ${issue.options.join('|')})`
+              : issue.code;
+        return `${issue.path.join('.') || 'env'}: ${reason}`;
+      })
+      .join('; ');
     throw new Error(`CONFIG_INVALID: ${message}`);
   }
   if (

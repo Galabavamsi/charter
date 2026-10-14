@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -271,6 +271,153 @@ describe('core-api health', () => {
         },
       });
       expect(kettle.offers.availability).toBe('https://schema.org/OutOfStock');
+    } finally {
+      await app.close();
+      await rm(spaRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('maps client faults to 4xx codes instead of INTERNAL_ERROR', async () => {
+    const { app } = await buildServer(
+      {
+        DATABASE_URL: 'postgres://charter:charter@127.0.0.1:5432/charter',
+        CHARTER_ENV: 'test',
+        RAZORPAY_MODE: 'test',
+      },
+      { authVerifier: testAuthVerifier(), tenantRepository: testTenantRepository() },
+    );
+
+    try {
+      const oversized = await app.inject({
+        method: 'POST',
+        url: '/api/v1/conversations',
+        headers: { ...authHeaders('buyer'), 'content-type': 'application/json' },
+        payload: JSON.stringify({ shopSlug: 'northstar', padding: 'x'.repeat(70 * 1024) }),
+      });
+      expect(oversized.statusCode).toBe(413);
+      expect(oversized.json().error).toBe('PAYLOAD_TOO_LARGE');
+
+      const malformed = await app.inject({
+        method: 'POST',
+        url: '/api/v1/conversations',
+        headers: { ...authHeaders('buyer'), 'content-type': 'application/json' },
+        payload: '{"shopSlug":',
+      });
+      expect(malformed.statusCode).toBe(400);
+      expect(malformed.json().error).not.toBe('INTERNAL_ERROR');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('renders the landing page with social preview tags and one description', async () => {
+    const spaRoot = await mkdtemp(join(tmpdir(), 'charter-home-'));
+    await writeFile(
+      join(spaRoot, 'index.html'),
+      [
+        '<!doctype html><html><head><title>Charter</title>',
+        '<meta',
+        '  name="description"',
+        '  content="Static"',
+        '/>',
+        '</head><body><div id="root"></div></body></html>',
+      ].join('\n'),
+    );
+    const { app } = await buildServer(
+      {
+        DATABASE_URL: 'postgres://charter:charter@127.0.0.1:5432/charter',
+        CHARTER_ENV: 'test',
+        RAZORPAY_MODE: 'test',
+        CHARTER_PUBLIC_URL: 'https://charter.example',
+      },
+      { spaRoot },
+    );
+
+    try {
+      const home = await app.inject({ method: 'GET', url: '/' });
+      expect(home.statusCode).toBe(200);
+      expect(home.headers['content-type']).toContain('text/html');
+      expect(home.body).toContain(
+        '<meta data-charter-head="og:image" property="og:image" content="https://charter.example/media/landing-poster.jpg">',
+      );
+      expect(home.body).toContain('name="twitter:card" content="summary_large_image"');
+      expect(home.body.match(/name="description"/g)).toHaveLength(1);
+      expect(home.body.match(/<title/g)).toHaveLength(1);
+      expect(home.body).not.toContain('content="Static"');
+      for (const url of ['/agents', '/shops']) {
+        const page = await app.inject({ method: 'GET', url });
+        expect(page.body.match(/name="description"/g)).toHaveLength(1);
+        expect(page.body).not.toContain('content="Static"');
+      }
+    } finally {
+      await app.close();
+      await rm(spaRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('serves a malformed shop slug as the SPA 404 page instead of JSON', async () => {
+    const spaRoot = await mkdtemp(join(tmpdir(), 'charter-slug-'));
+    await writeFile(join(spaRoot, 'index.html'), '<!doctype html><title>Charter SPA</title>');
+    const { app } = await buildServer(
+      {
+        DATABASE_URL: 'postgres://charter:charter@127.0.0.1:5432/charter',
+        CHARTER_ENV: 'test',
+        RAZORPAY_MODE: 'test',
+      },
+      { spaRoot },
+    );
+
+    try {
+      for (const url of ['/shops/Northstar', '/shops/northstar_', '/shops/no-such-shop']) {
+        const page = await app.inject({ method: 'GET', url });
+        expect(page.statusCode).toBe(404);
+        expect(page.headers['content-type']).toContain('text/html');
+        expect(page.body).toContain('<title>Charter SPA</title>');
+      }
+    } finally {
+      await app.close();
+      await rm(spaRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps hashed assets immutable, revalidates media hourly, and exempts static files from the rate limit', async () => {
+    const spaRoot = await mkdtemp(join(tmpdir(), 'charter-static-'));
+    await writeFile(join(spaRoot, 'index.html'), '<!doctype html><title>Charter SPA</title>');
+    await mkdir(join(spaRoot, 'assets'));
+    await mkdir(join(spaRoot, 'media'));
+    await writeFile(join(spaRoot, 'assets', 'index-abc123.js'), 'console.log(1);');
+    await writeFile(join(spaRoot, 'media', 'landing-poster.jpg'), 'jpg');
+    const { app } = await buildServer(
+      {
+        DATABASE_URL: 'postgres://charter:charter@127.0.0.1:5432/charter',
+        CHARTER_ENV: 'test',
+        RAZORPAY_MODE: 'test',
+      },
+      { spaRoot },
+    );
+
+    try {
+      const chunk = await app.inject({ method: 'GET', url: '/assets/index-abc123.js' });
+      expect(chunk.statusCode).toBe(200);
+      expect(chunk.headers['cache-control']).toContain('immutable');
+      const poster = await app.inject({ method: 'GET', url: '/media/landing-poster.jpg' });
+      expect(poster.statusCode).toBe(200);
+      expect(poster.headers['cache-control']).toBe('public, max-age=3600');
+
+      for (let index = 0; index < 125; index += 1) {
+        await app.inject({ method: 'GET', url: '/assets/index-abc123.js' });
+      }
+      const afterBurst = await app.inject({ method: 'GET', url: '/media/landing-poster.jpg' });
+      expect(afterBurst.statusCode).toBe(200);
+      const health = await app.inject({ method: 'GET', url: '/health' });
+      expect(health.statusCode).toBe(200);
+
+      // A file-like suffix on an API path still counts against the budget.
+      let last = 0;
+      for (let index = 0; index < 121; index += 1) {
+        last = (await app.inject({ method: 'GET', url: '/api/v1/shops/northstar.js' })).statusCode;
+      }
+      expect(last).toBe(429);
     } finally {
       await app.close();
       await rm(spaRoot, { recursive: true, force: true });

@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router';
-import { useAccount, useApi } from '../account';
+import { useAccount, useApi, type AccountShop } from '../account';
 import { useAuth } from '../auth';
-import { canReadOrders, canReadRecovery, merchantSectionForRole } from '../capabilities';
+import {
+  canManageCatalog,
+  canManageSettings,
+  canReadOrders,
+  canReadRecovery,
+  merchantSectionForRole,
+} from '../capabilities';
 import { FormNotice } from '../merchant-components';
-import { merchantCommandKey, merchantErrorMessage } from '../merchant-api';
+import {
+  merchantCommandKey,
+  merchantErrorMessage,
+  setMerchantShopPublished,
+} from '../merchant-api';
 import { Onboard } from '../Onboard';
 import { RouteStatus } from '../route-guards';
 
@@ -89,7 +99,7 @@ export function MerchantIndexPage() {
       </h1>
       <p>
         {firstShop
-          ? 'Create the durable shop record this account will own.'
+          ? 'Your shop starts as a private draft. Add a product with a price and stock, then publish it.'
           : 'Choose only from shops where this account has an active membership.'}
       </p>
       {firstShop ? form : null}
@@ -118,6 +128,53 @@ export function MerchantIndexPage() {
         </>
       ) : null}
     </section>
+  );
+}
+
+function DraftShopBanner({ shop, base }: { shop: AccountShop; base: string }) {
+  const api = useApi();
+  const { refresh } = useAccount();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canPublish = canManageSettings(shop.role);
+
+  async function publish() {
+    setBusy(true);
+    setError(null);
+    try {
+      await setMerchantShopPublished(api, shop.tenantId, true);
+      // The account carries shop.status, so refreshing it swaps this banner for the
+      // storefront link and lets the open section reload its own records.
+      await refresh();
+    } catch (cause) {
+      setError(merchantErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="merchant-draft-banner" role="region" aria-label="Shop visibility">
+      <p>
+        <strong>Draft</strong> — buyers can't see this shop yet.{' '}
+        {canPublish
+          ? 'Publish it once at least one product has a price and stock.'
+          : 'An owner or admin can publish it.'}
+      </p>
+      <div className="record-actions">
+        {canManageCatalog(shop.role) ? (
+          <Link className="ghost link-btn" to={`${base}/catalog`}>
+            Add products
+          </Link>
+        ) : null}
+        {canPublish ? (
+          <button type="button" onClick={() => void publish()} disabled={busy}>
+            {busy ? 'Publishing…' : 'Publish shop'}
+          </button>
+        ) : null}
+      </div>
+      {error ? <FormNotice kind="error">{error}</FormNotice> : null}
+    </div>
   );
 }
 
@@ -185,40 +242,49 @@ export function MerchantShell() {
           <p className="merchant-context-line">
             {shop.role} access · {shop.status}
             {shop.synthetic ? ' · synthetic / test shop' : ''}
+            {shop.status === 'published' ? (
+              <>
+                {' · '}
+                <Link to={`/shops/${shop.slug}`}>View storefront</Link>
+              </>
+            ) : null}
           </p>
         </div>
-        <label>
-          Shop
-          <select
-            value={shop.tenantId}
-            aria-label="Shop"
-            onChange={(event) => {
-              const nextShop = memberShops.find(
-                (candidate) => candidate.tenantId === event.target.value,
-              );
-              if (!nextShop) {
-                return;
-              }
-              const nextSection = merchantSectionForRole(nextShop.role, section);
-              setSwitchNotice(
-                nextSection === section
-                  ? `Switched to ${nextShop.name} as ${nextShop.role}.`
-                  : `Switched to ${nextShop.name} as ${nextShop.role}. Opened ${nextSection} because ${section} is unavailable.`,
-              );
-              navigate(`/merchant/shops/${nextShop.tenantId}/${nextSection}`);
-            }}
-          >
-            {memberShops.map((memberShop) => (
-              <option key={memberShop.tenantId} value={memberShop.tenantId}>
-                {memberShop.name} · {memberShop.role}
-              </option>
-            ))}
-          </select>
-        </label>
+        {memberShops.length > 1 ? (
+          <label>
+            Shop
+            <select
+              value={shop.tenantId}
+              aria-label="Shop"
+              onChange={(event) => {
+                const nextShop = memberShops.find(
+                  (candidate) => candidate.tenantId === event.target.value,
+                );
+                if (!nextShop) {
+                  return;
+                }
+                const nextSection = merchantSectionForRole(nextShop.role, section);
+                setSwitchNotice(
+                  nextSection === section
+                    ? `Switched to ${nextShop.name} as ${nextShop.role}.`
+                    : `Switched to ${nextShop.name} as ${nextShop.role}. Opened ${nextSection} because ${section} is unavailable.`,
+                );
+                navigate(`/merchant/shops/${nextShop.tenantId}/${nextSection}`);
+              }}
+            >
+              {memberShops.map((memberShop) => (
+                <option key={memberShop.tenantId} value={memberShop.tenantId}>
+                  {memberShop.name} · {memberShop.role}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <p className="sr-only" aria-live="polite">
           {switchNotice}
         </p>
       </header>
+      {shop.status === 'draft' ? <DraftShopBanner shop={shop} base={base} /> : null}
       <div className="merchant-layout">
         <aside className="merchant-nav">
           <nav aria-label="Merchant sections">

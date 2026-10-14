@@ -505,7 +505,15 @@ export function freezeQuote(cartId: string, now: Date = new Date()): FrozenQuote
   if (!cart) {
     throw new Error('CART_NOT_FOUND');
   }
+  // A ₹0 lock (empty cart after a denied add) can never be paid and would
+  // leave the chat QUOTE_LOCKED, so refuse it before consuming any offer.
+  if (cart.lines.length === 0) {
+    throw new Error('CART_EMPTY');
+  }
   const totals = lineTotal(cart.lines, cart.tenantId);
+  if (totals.total < 100n) {
+    throw new Error('QUOTE_TOTAL_TOO_LOW');
+  }
   const decision = evaluateProposedTotal(
     totals.total,
     authorityFor(cart.tenantId),

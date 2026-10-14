@@ -2,7 +2,8 @@
 
 **Conversation in. Razorpay payment out. Every amount is bounded, explained, and recoverable.**
 
-Live evaluator (Razorpay **test** mode): [https://core-api-production-087b.up.railway.app](https://core-api-production-087b.up.railway.app)
+Live demo (Razorpay **test** mode, no real money moves): [https://charter.humanslop.in](https://charter.humanslop.in)  
+Demo video: [youtu.be/WLBiC6wdRbI](https://youtu.be/WLBiC6wdRbI)
 
 Charter is a merchant-owned trust layer for agentic commerce. A buyer talks to one Concierge — chat, voice, or an external agent over MCP — and pays a **frozen** INR total through hosted Razorpay Checkout. The model may rank and explain. Only versioned shop policy and catalog facts may change money.
 
@@ -17,11 +18,11 @@ The track asks for an agent that grows merchant revenue **or** makes a merchant 
 
 Charter does both sides of that sentence with **one commerce core** and **three doors**:
 
-| Door | What it is | Track 01 mapping |
-| --- | --- | --- |
-| **Chat Concierge** | In-app conversation → freeze quote → Razorpay Checkout | Conversational in-app checkout |
-| **Voice (Talk)** | Same Concierge, spoken. Vapi Talk hits `/api/v1/voice/:id/chat/completions`, which runs the **same** `runConversationTurn` tools as text. Transcripts land in the thread. Pay stays on hosted Razorpay (we never take PAN/UPI). | Conversational checkout for a voice buyer |
-| **MCP / HTTP agent** | Agent-readable catalog + checkout. Discovery at `/.well-known/charter-commerce.json`. Tools at `GET /mcp/tools`, `POST /mcp/call`. | Makes the merchant sellable to an AI buyer end to end |
+| Door                 | What it is                                                                                                                                                                                                                      | Track 01 mapping                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Chat Concierge**   | In-app conversation → freeze quote → Razorpay Checkout                                                                                                                                                                          | Conversational in-app checkout                        |
+| **Voice (Talk)**     | Same Concierge, spoken. Vapi Talk hits `/api/v1/voice/:id/chat/completions`, which runs the **same** `runConversationTurn` tools as text. Transcripts land in the thread. Pay stays on hosted Razorpay (we never take PAN/UPI). | Conversational checkout for a voice buyer             |
+| **MCP / HTTP agent** | Agent-readable catalog + checkout. Discovery at `/.well-known/charter-commerce.json`. Tools at `GET /mcp/tools`, `POST /mcp/call`.                                                                                              | Makes the merchant sellable to an AI buyer end to end |
 
 MCP is not a second store. `POST /mcp/call` forwards the buyer JWT and only invokes first-party `/api` paths (`catalog.search`, `cart.update`, `quote.create`, `checkout.complete`, `order.status`, …). Caller-supplied `path` is ignored. The adapter holds **no** database or Razorpay credentials. HTTP, Concierge, and MCP return the same SKU, amount, and currency on the same quote.
 
@@ -49,7 +50,7 @@ Charter solves that loop:
 - **Merchants** get a desk with catalog, orders, recovery, hard caps, and truthful quote→capture metrics. Synthetic seed shops stay labeled synthetic.
 - **Agents** call the same first-party `/api` through a thin MCP adapter. Discovery is honest: `protocolStatus` is an evaluator HTTP contract, `liveSettlement` is false, and UCP / ACP / AP2 / Gemini / Alexa are listed as **not certified**.
 
-The proof is a public Razorpay **test-mode** evaluator on Railway, not a claim that each shop has a live Razorpay account.
+The proof is a public Razorpay **test-mode** demo, not a claim that each shop has a live Razorpay account.
 
 ---
 
@@ -137,16 +138,16 @@ Rules hold hard cap, autonomous cap, and forbidden materials (Northstar: no glas
 
 **Voice** is not a second product. Talk uses Vapi; the custom LLM URL is this app (`/api/v1/voice/...`). Utterances become the same cart/quote/pay tools as chat. Transcripts are tagged `source: voice` in the thread.
 
-**MCP** is the AI-buyer door for Track 01 — agent-readable catalog + gated checkout, same amounts as Concierge. Human-readable map on the site: [/agents](https://core-api-production-087b.up.railway.app/agents). Live APIs (no login for discovery/tools):
+**MCP** is the AI-buyer door for Track 01 — agent-readable catalog + gated checkout, same amounts as Concierge. Human-readable map on the site: [/agents](https://charter.humanslop.in/agents). Live APIs (no login for discovery and catalog tools):
 
-| Surface | URL |
-| --- | --- |
-| Discovery | `GET https://core-api-production-087b.up.railway.app/.well-known/charter-commerce.json` |
-| Alias | `GET https://core-api-production-087b.up.railway.app/api/.well-known/agent-commerce` |
-| MCP tools | `GET https://core-api-production-087b.up.railway.app/mcp/tools` |
-| MCP call | `POST https://core-api-production-087b.up.railway.app/mcp/call` (buyer JWT; first-party `/api` only) |
+| Surface            | URL                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| MCP server         | `POST https://charter.humanslop.in/mcp` — Model Context Protocol over Streamable HTTP (JSON-RPC 2.0, stateless) |
+| Discovery          | `GET https://charter.humanslop.in/.well-known/charter-commerce.json`                                            |
+| Alias              | `GET https://charter.humanslop.in/api/.well-known/agent-commerce`                                               |
+| Plain HTTP adapter | `GET /mcp/tools`, `POST /mcp/call` (same tools, no JSON-RPC)                                                    |
 
-Tools: `agent.capabilities`, `catalog.search`, `catalog.detail`, `cart.create`, `cart.get`, `cart.update`, `quote.create`, `checkout.complete`, `checkout.resume`, `order.status`. Optional out-of-process proxy: `apps/mcp-gateway`. This is an evaluator HTTP/MCP adapter, not a protocol certification.
+Connect any MCP client to `https://charter.humanslop.in/mcp`. Tools (11): `agent_capabilities`, `shops_search`, `catalog_search`, `catalog_detail`, `cart_create`, `cart_get`, `cart_update`, `quote_create`, `checkout_complete`, `checkout_resume`, `order_status`. Cart, quote and checkout tools act for a buyer, so the MCP HTTP request must carry `Authorization: Bearer <Supabase access token>` (copy it from the Account page). `checkout_complete` returns a hosted Razorpay Checkout order; a human still completes payment in the browser. The MCP layer holds no database or Razorpay credentials and only calls first-party `/api` routes. It is not a UCP / ACP / AP2 certification.
 
 ### 9. Control (platform)
 
@@ -157,7 +158,7 @@ Tools: `agent.capabilities`, `catalog.search`, `catalog.detail`, `cart.create`, 
 ## Build challenges — what we faced, and how we solved them
 
 **1. The model must not be the cashier.**  
-Early chat could sound helpful and still be wrong on price, stock, or policy. Fix: tools own catalog facts; a material change creates a new disclosed quote; payment amount must equal the pinned minor-unit total. UI copy states what Concierge does *not* know.
+Early chat could sound helpful and still be wrong on price, stock, or policy. Fix: tools own catalog facts; a material change creates a new disclosed quote; payment amount must equal the pinned minor-unit total. UI copy states what Concierge does _not_ know.
 
 **2. Razorpay is asynchronous, browsers lie.**  
 Closing Checkout is not proof of “nothing charged.” Fix: browser callbacks are advisory. Server fetches the Order and every Payment before retry copy. `unknown_attempts` (dismiss, no Payment) stays fail-closed. `same_order_retry_safe` only when every attempt is terminal `failed`. Unchanged quote reuses the **same** Razorpay Order.
@@ -169,7 +170,7 @@ We do not pretend each merchant has Route / linked accounts. Fix: every quote, O
 Live gift chat hit `FACTS_STALE`, Pay timeouts, and catalog holes. Fix: Razorpay HTTP abort, one Order create per frozen quote, Buy now no longer treated as Pay intent, catalog expand for the seed shops, thinking orbs and real step copy so the buyer sees reconcile vs pay.
 
 **5. Same-origin public evaluator without a git remote.**  
-Render needed a Git deploy we were not allowed to push. Fix: one Railway web service — Fastify binds `0.0.0.0:$PORT`, serves `/api`, webhooks, discovery/MCP, and the built SPA. `render.yaml` exists and is **not** applied. After SPA deploys, hard-refresh (Ctrl+Shift+R).
+Render needed a Git deploy we were not allowed to push. Fix: one same-origin web service — Fastify binds `0.0.0.0:$PORT`, serves `/api`, webhooks, discovery/MCP, and the built SPA. It ran on Railway for the buildathon and now runs as one container on AWS Lightsail. `render.yaml` exists and is **not** applied.
 
 **6. Truthful merchant metrics and INR.**  
 A second capture must not double GMV. Fix: unique capture key, cohort copy that names the denominator, bigint-safe Indian grouping (`₹1,00,000.00`), signed-cursor pagination that rejects tamper and cross-scope reuse.
@@ -196,16 +197,16 @@ Details: [`docs/evaluator/UNSUPPORTED.md`](docs/evaluator/UNSUPPORTED.md). Live 
 
 TypeScript, pnpm, Fastify, Postgres, Vite + React. Visual design is intentionally unset.
 
-Requires Node 20+, pnpm 9, Docker.
+Requires Node 22+, pnpm 9, Docker.
 
 ```bash
 cp .env.example .env
 # put Razorpay Test keys in .env — never commit it
 pnpm install
 pnpm db:up
-pnpm migrate
+pnpm migrate              # creates the charter_app role (NOLOGIN) first if missing
+CHARTER_APP_PASSWORD=<16+ chars> pnpm db:provision-role
 pnpm seed
-pnpm db:provision-role
 pnpm test
 ```
 
@@ -225,9 +226,19 @@ pnpm --filter @charter/concierge-web dev
 
 Health: `http://127.0.0.1:3000/health`  
 Discovery: `http://127.0.0.1:3000/.well-known/charter-commerce.json`  
-Webhook: `POST /webhooks/razorpay` on core-api. Live target: `https://core-api-production-087b.up.railway.app/webhooks/razorpay`.
+Webhook: `POST /webhooks/razorpay` on core-api. Live target: `https://charter.humanslop.in/webhooks/razorpay`.
 
 Root gates: `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm format:check`, `pnpm build`, `pnpm smoke:built`.
+
+### Deploy (AWS Lightsail)
+
+One container (Fastify API + webhooks + MCP + built SPA) on a Lightsail container service in `ap-south-1`, pulling from ECR. Postgres and Auth stay on Supabase; the runtime connects as `charter_app` through the Supavisor transaction pooler (`:6543`, `sslmode=no-verify`).
+
+```bash
+docker build --platform linux/amd64   --build-arg VITE_SUPABASE_URL=https://<ref>.supabase.co   --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_... -t charter .
+```
+
+Runtime env: `CHARTER_ENV=production`, `CHARTER_PUBLIC_URL=https://charter.humanslop.in`, `TRUST_PROXY_HOPS=1`, `DATABASE_URL`, `CHARTER_CURSOR_SECRET`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, Razorpay test keys and webhook secret, `FIREWORKS_API_KEY`, `VAPI_PUBLIC_KEY`. Demo caps: `CHARTER_DAILY_TURNS_PER_USER` (default 40) and `CHARTER_DAILY_TURNS_GLOBAL` (default 400); voice sessions end after 3 minutes.
 
 ---
 

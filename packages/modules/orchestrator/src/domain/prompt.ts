@@ -1,6 +1,6 @@
 import { DEFAULT_TENANT, requireMerchant } from '@charter/catalog';
 
-export const FIREWORKS_DEFAULT_MODEL = 'accounts/fireworks/models/deepseek-v4-flash-0731';
+export const FIREWORKS_DEFAULT_MODEL = 'accounts/fireworks/models/deepseek-v4p1-flash';
 export const PROMPT_VERSION = 'concierge.tenant.v6';
 
 function rupees(minor: bigint): string {

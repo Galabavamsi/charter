@@ -1,0 +1,44 @@
+/* Small Concierge chat additions, kept out of product.css. */
+
+.chat-moves .chat-move-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-moves .chat-move-link-secondary {
+  border: 1px solid rgba(11, 18, 32, 0.14);
+  background: #fff;
+  color: var(--ink);
+}
+
+.chat-moves .pay-test-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.composer-box textarea {
+  field-sizing: content;
+}
+
+.composer-box button.composer-talk:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-box button.composer-talk:disabled:hover {
+  background: transparent;
+}
+
+.transcript-end {
+  height: 0;
+  scroll-margin-bottom: 1rem;
+}

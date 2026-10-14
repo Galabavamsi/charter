@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '@charter/config';
-import { evictConversation } from '@charter/orchestrator';
+import { evictConversation, usesStructuredCheckout } from '@charter/orchestrator';
 import { RazorpayClient } from '@charter/razorpay';
 import {
   conversationHooks,
@@ -15,6 +15,7 @@ import { hydratePersistedConversation } from './tenant/conversation-state.js';
 import { hydrateCatalogCache } from './tenant/catalog-cache.js';
 import { requireOwnedResource } from './auth/guards.js';
 import { requireBuyer, requireBuyerPreValidation } from './auth/context.js';
+import { turnQuotaFor, VOICE_DAILY_LIMIT_REPLY } from './turn-quota.js';
 
 type VoiceMessage = {
   role?: string;
@@ -30,6 +31,7 @@ const COMPLETE_VOICE_COMMAND =
 const LOCK_OR_PAY = /\b(lock this total|log the total|pay now|proceed to payment|razorpay)\b/iu;
 
 export const VOICE_HOLD_REPLY = 'Mm.';
+const HOLD_ECHO = /^m+\.?$/iu;
 
 export function isIncompleteVoiceUtterance(text: string): boolean {
   const trimmed = text.trim();
@@ -89,31 +91,80 @@ export function resolveVoiceShopSlug(input: {
   return undefined;
 }
 
-function lastUserText(messages: VoiceMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== 'user') {
-      continue;
-    }
-    if (typeof message.content === 'string') {
-      return message.content.trim();
-    }
-    if (Array.isArray(message.content)) {
-      return message.content
-        .map((part) => {
-          if (typeof part === 'string') {
-            return part;
-          }
-          if (part && typeof part === 'object' && 'text' in part) {
-            return String((part as { text?: string }).text ?? '');
-          }
-          return '';
-        })
-        .join(' ')
-        .trim();
-    }
+function messageText(message: VoiceMessage): string {
+  if (typeof message.content === 'string') {
+    return message.content.trim();
+  }
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text?: string }).text ?? '');
+        }
+        return '';
+      })
+      .join(' ')
+      .trim();
   }
   return '';
+}
+
+/**
+ * The shopper's current utterance. After a hold reply, Vapi sends the rest of
+ * the sentence as a new user message: join the fragments so "Add the" + "Mm." +
+ * "steel travel press" reaches the turn as one request. Only held (incomplete)
+ * fragments are joined: a complete earlier utterance already ran as its own
+ * turn, and replaying it (e.g. after a barge-in dropped the reply) would add twice.
+ */
+export function lastUserText(messages: VoiceMessage[]): string {
+  const parts: string[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === 'user') {
+      const text = messageText(message);
+      if (!text) {
+        continue;
+      }
+      if (parts.length > 0 && !isIncompleteVoiceUtterance(text)) {
+        break;
+      }
+      parts.push(text);
+      continue;
+    }
+    if (parts.length === 0) {
+      continue;
+    }
+    if (message?.role === 'assistant' && HOLD_ECHO.test(messageText(message))) {
+      continue;
+    }
+    break;
+  }
+  return parts.reverse().join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Chat replies carry markdown and ₹ glyphs that TTS reads out badly. */
+export function speakable(text: string): string {
+  const lines = text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*`]+/g, '')
+    .replace(/₹\s?([\d,]+)\.00\b/g, 'rupees $1')
+    .replace(/₹\s?/g, 'rupees ')
+    .split(/\n+/)
+    .map((line) =>
+      line
+        .replace(/^\s*(?:#+|>|[-•]|\d+[.)])\s+/, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean);
+  return lines
+    .map((line, index) =>
+      index === lines.length - 1 || /[.!?:;,]$/.test(line) ? line : `${line}.`,
+    )
+    .join(' ');
 }
 
 function completionPayload(content: string, stream: boolean, requestId: string) {
@@ -145,6 +196,9 @@ export async function registerVoiceRoutes(
     '/v1/voice/:conversationId/chat/completions',
     {
       preValidation: requireBuyerPreValidation,
+      // Vapi posts the whole call transcript plus call/assistant metadata; long
+      // calls outgrow the global 64KB limit and the agent would go silent.
+      bodyLimit: 512 * 1024,
       schema: {
         params: {
           type: 'object',
@@ -177,7 +231,7 @@ export async function registerVoiceRoutes(
             stream: { type: 'boolean' },
             messages: {
               type: 'array',
-              maxItems: 100,
+              maxItems: 400,
               items: { type: 'object', additionalProperties: true },
             },
           },
@@ -243,8 +297,17 @@ export async function registerVoiceRoutes(
       try {
         if (text && isIncompleteVoiceUtterance(text)) {
           content = VOICE_HOLD_REPLY;
+        } else if (
+          text &&
+          !usesStructuredCheckout(text, Boolean(conversation.quoteId)) &&
+          !turnQuotaFor(config).take(principal.userId)
+        ) {
+          // Spoken 200, not an error status: a non-200 makes Vapi hang up mid-call.
+          content = VOICE_DAILY_LIMIT_REPLY;
         } else if (text) {
-          content = (await runConversationTurn(config, conversation, text, hooks, 'voice')).reply;
+          content = speakable(
+            (await runConversationTurn(config, conversation, text, hooks, 'voice')).reply,
+          );
         }
       } catch (error) {
         try {

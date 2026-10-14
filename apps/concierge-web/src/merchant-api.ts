@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi } from './account';
-import { ApiError } from './api';
+import { ApiError, type ApiClient } from './api';
 
 export type MerchantResourceState<T> = {
   data: T | null;
@@ -199,6 +199,21 @@ const SAFE_ERROR_COPY: Record<string, string> = {
   DATE_RANGE_INVALID:
     'Use a real calendar date range of at most 366 days. Reversed ranges are not accepted.',
   CURSOR_INVALID: 'This list page is no longer valid. Reload the first page and try again.',
+  CATALOG_SKU_CONFLICT: 'That SKU is already used by another product in this shop.',
+  SHOP_PUBLISH_INVALID: 'Publish at least one product with a price and available stock first.',
+  SHOP_CAPABILITY_REQUIRED: 'Your role in this shop cannot make this change.',
+  SHOP_MEMBERSHIP_REQUIRED: 'This account is not an active member of this shop.',
+  SHOP_NAME_REQUIRED: 'Shop name needs at least 2 characters.',
+  SHOP_CREATE_FAILED: 'The shop could not be created. Wait a moment and try again.',
+  VALIDATION_ERROR: 'Some fields are missing or in the wrong format. Check the form and try again.',
+  RATE_LIMITED: 'Too many attempts. Wait a minute and try again.',
+  IDEMPOTENCY_CONFLICT:
+    'This change was already submitted with different details. Reload and retry.',
+  MONEY_DECIMAL_INVALID: 'Use rupees with no more than 2 decimal places.',
+  RULES_INVALID:
+    'The autonomous cap must not exceed the hard cap, and each offer needs a positive discount at or below the hard cap.',
+  SETTINGS_INVALID:
+    'Shop name needs at least 2 characters, and a GSTIN must be exactly 15 letters or numbers.',
 };
 
 export function merchantErrorMessage(error: unknown): string {
@@ -379,6 +394,8 @@ export type MerchantSettings = {
   blurb: string;
   slug: string;
   publicPath: string;
+  status?: 'draft' | 'published' | 'suspended';
+  publishedAt?: string | null;
   synthetic: boolean;
   testMode: boolean;
   paymentAccountDisclosure: string;
@@ -393,3 +410,29 @@ export type MerchantSettings = {
     label: string;
   }>;
 };
+
+/**
+ * Publishes or unpublishes a shop. Without a known settings version it reads the
+ * current one first, so callers outside the settings page (the merchant mast) can use it.
+ */
+export async function setMerchantShopPublished(
+  api: ApiClient,
+  tenantId: string,
+  published: boolean,
+  expectedVersion?: number,
+): Promise<MerchantSettings> {
+  const version =
+    expectedVersion ??
+    (await api<MerchantSettings>(`/v1/merchant/shops/${tenantId}/settings`, {})).version;
+  const response = await api<{ settings: MerchantSettings }>(
+    `/v1/merchant/shops/${tenantId}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        'idempotency-key': merchantCommandKey(published ? 'shop-publish' : 'shop-unpublish'),
+      },
+      body: JSON.stringify({ expectedVersion: version, published }),
+    },
+  );
+  return response.settings;
+}

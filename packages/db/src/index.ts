@@ -33,7 +33,20 @@ export {
 } from './tenant.js';
 
 export function createDb(connectionString: string): Kysely<Database> {
-  const pool = new pg.Pool({ connectionString });
+  // Small pool with fast failure: the pooler (Supavisor) is shared with overlapping
+  // deploys, and an idle client it drops must not crash the process.
+  const pool = new pg.Pool({
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 10_000,
+    keepAlive: true,
+  });
+  pool.on('error', (error) => {
+    console.error(
+      JSON.stringify({ level: 'error', msg: 'pg_pool_idle_client_error', error: error.message }),
+    );
+  });
   return new Kysely<Database>({
     dialect: new PostgresDialect({ pool }),
   });

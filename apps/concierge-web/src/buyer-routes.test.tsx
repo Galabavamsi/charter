@@ -156,7 +156,10 @@ afterEach(() => {
 describe('authenticated Concierge home', () => {
   it('plays the looping film behind Concierge', async () => {
     renderAt('/chats');
-    expect(await screen.findByRole('heading', { name: 'Concierge' })).toBeVisible();
+    // First render in this file loads the lazy route chunks cold, so allow more than 1s.
+    expect(
+      await screen.findByRole('heading', { name: 'Concierge' }, { timeout: 5_000 }),
+    ).toBeVisible();
     expect(document.querySelector('.home-hero-media source')).toHaveAttribute(
       'src',
       '/media/landing-loop.mp4',
@@ -212,8 +215,9 @@ describe('authenticated Concierge home', () => {
       { timeout: 8_000 },
     );
     expect(within(sidebar).getByText('Your chats')).toBeVisible();
-    expect(within(sidebar).getAllByText('surprise gift')).toHaveLength(1);
-    expect(within(sidebar).getByText('Northstar Travel Coffee')).toBeVisible();
+    // Two chats that open with the same words are still two chats (de-dupe is by id).
+    expect(within(sidebar).getAllByText('surprise gift')).toHaveLength(2);
+    expect(within(sidebar).getAllByText('Northstar Travel Coffee')).toHaveLength(2);
     expect(within(sidebar).getByText('desk lamp')).toBeVisible();
     expect(within(sidebar).getByText('Indigo Desk')).toBeVisible();
     expect(screen.queryByText(/chats in this shop/i)).not.toBeInTheDocument();

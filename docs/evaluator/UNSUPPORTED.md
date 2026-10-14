@@ -1,31 +1,33 @@
 # Honest unsupported-feature review
 
+> **Historical record.** This page documents the Razorpay AI Buildathon evaluator as it ran on Railway in September 2026. That service is gone; the app now runs at https://charter.humanslop.in.
+
 **Recorded:** 2026-09-04 (live public GETs against Railway).  
 **Live origin:** `https://core-api-production-087b.up.railway.app`  
 **Mode:** Razorpay **test** only.
 
-This is not a certification and not live settlement. Milestone 9 is evaluator-complete on Railway as of 2026-09-05. Source list: handover [Explicitly unsupported](../handover/CHARTER_SECURE_EVALUATOR_EXECUTION_HANDOVER.md#explicitly-unsupported). Evaluator map: [README.md](./README.md). Product README: [../../README.md](../../README.md).
+This is not a certification and not live settlement. Milestone 9 is evaluator-complete on Railway as of 2026-09-05. Evaluator map: [README.md](./README.md). Product README: [../../README.md](../../README.md).
 
 ## Public smoke (no credentials)
 
 Fetched 2026-09-04 ~18:08 UTC. Bodies contained no secrets. `Server: railway-hikari`.
 
-| URL | Status | Facts |
-| --- | --- | --- |
-| `GET /health` | 200 | `ok: true`, `service: core-api`, `env: production`, **`razorpayMode: test`**, `paymentsConfigured: true`, `db: true` |
-| `GET /.well-known/charter-commerce.json` | 200 | **`protocolStatus: evaluator-http-contract`**, `environment.mode: test`, **`liveSettlement: false`**, **`notCertified: [UCP, ACP, AP2, Gemini, Alexa]`**, `mcp.protocolStatus: evaluator-http-adapter` |
-| `GET /api/.well-known/agent-commerce` | 200 | Alias: **`protocolStatus: evaluator-http-contract`**, same **`notCertified`**, points at canonical discovery |
-| `GET /mcp/tools` | 200 | **`protocolStatus: evaluator-http-adapter`**, `certified: false`, ten first-party tools |
-| `GET /robots.txt` | 200 | `User-agent: *`, `Allow: /`, sitemap URL on this origin |
-| `GET /sitemap.xml` | 200 | Includes `/shops/northstar` and the other published shop locs |
-| `GET /shops` | 200 | `text/html` SPA shell; title/canonical “Shop directory” |
-| `GET /shops/northstar` | 200 | `text/html` SPA shell; title “Northstar Travel Coffee”; JSON-LD Store |
+| URL                                      | Status | Facts                                                                                                                                                                                                  |
+| ---------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /health`                            | 200    | `ok: true`, `service: core-api`, `env: production`, **`razorpayMode: test`**, `paymentsConfigured: true`, `db: true`                                                                                   |
+| `GET /.well-known/charter-commerce.json` | 200    | **`protocolStatus: evaluator-http-contract`**, `environment.mode: test`, **`liveSettlement: false`**, **`notCertified: [UCP, ACP, AP2, Gemini, Alexa]`**, `mcp.protocolStatus: evaluator-http-adapter` |
+| `GET /api/.well-known/agent-commerce`    | 200    | Alias: **`protocolStatus: evaluator-http-contract`**, same **`notCertified`**, points at canonical discovery                                                                                           |
+| `GET /mcp/tools`                         | 200    | **`protocolStatus: evaluator-http-adapter`**, `certified: false`, ten first-party tools                                                                                                                |
+| `GET /robots.txt`                        | 200    | `User-agent: *`, `Allow: /`, sitemap URL on this origin                                                                                                                                                |
+| `GET /sitemap.xml`                       | 200    | Includes `/shops/northstar` and the other published shop locs                                                                                                                                          |
+| `GET /shops`                             | 200    | `text/html` SPA shell; title/canonical “Shop directory”                                                                                                                                                |
+| `GET /shops/northstar`                   | 200    | `text/html` SPA shell; title “Northstar Travel Coffee”; JSON-LD Store                                                                                                                                  |
 
 Automated repeat: `pnpm --filter @charter/concierge-web test:e2e:live` (`apps/concierge-web/e2e/evaluator.spec.ts`).
 
-## Explicitly unsupported (handover)
+## Explicitly unsupported
 
-From the handover list (~line 829):
+From the build notes at the time:
 
 - Live merchant settlement, Razorpay Route, linked/connected merchant accounts, live keys, or production payment topology.
 - Real customer, merchant, payment, or contact data.

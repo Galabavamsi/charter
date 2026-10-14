@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useAccount } from './account';
 import { useAuth } from './auth';
 import { canReadControl } from './capabilities';
@@ -108,10 +108,10 @@ export function AppFrame() {
           <small>bounded commerce</small>
         </Link>
         <nav className="global-nav" aria-label="Primary">
-          {auth.session ? <Link to="/chats">Concierge</Link> : null}
-          <Link to="/shops">Shops</Link>
-          <Link to="/agents">Agents</Link>
-          {auth.session ? <Link to="/orders">Orders</Link> : null}
+          {auth.session ? <NavLink to="/chats">Concierge</NavLink> : null}
+          <NavLink to="/shops">Shops</NavLink>
+          <NavLink to="/agents">Agents</NavLink>
+          {auth.session ? <NavLink to="/orders">Orders</NavLink> : null}
         </nav>
         <div className="global-account">
           {auth.loading ? <span className="header-status">Checking account…</span> : null}
@@ -180,7 +180,12 @@ export function AppFrame() {
       </main>
       <footer className="site-footer">
         <span>Charter</span>
-        <span>Amounts bounded. Charges explained. Failed pays recoverable.</span>
+        <span>
+          Portfolio demo on Razorpay test mode — no real money moves.{' '}
+          <a href="https://github.com/Galabavamsi/charter" target="_blank" rel="noreferrer">
+            Source on GitHub
+          </a>
+        </span>
       </footer>
     </div>
   );

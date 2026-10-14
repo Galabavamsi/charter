@@ -1,9 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import {
-  expectReadableHeading,
-  expectReducedMotionDuration,
-  expectSkipToMain,
-} from './a11y';
+import { expectReadableHeading, expectReducedMotionDuration, expectSkipToMain } from './a11y';
 
 const shop = {
   tenantId: 'northstar-demo-in',

@@ -262,7 +262,8 @@ function slugify(value: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'shop'
+      .slice(0, 48)
+      .replace(/-+$/, '') || 'shop'
   );
 }
 
@@ -882,6 +883,8 @@ function merchantSettingsSnapshot(
     blurb: shop.blurb,
     slug: shop.slug,
     publicPath: `/shops/${shop.slug}`,
+    status: shop.status,
+    publishedAt: shop.publishedAt ?? null,
     synthetic: shop.synthetic,
     testMode,
     paymentAccountDisclosure: testMode
@@ -1203,6 +1206,7 @@ export function createMemoryTenantRepository(
           const categoryTitle = input.category.trim();
           const sku = input.sku.trim();
           const priceMinor = BigInt(input.priceMinor);
+          // Mirrors Postgres: stock is only required on the draft -> published transition.
           if (
             input.status === 'published' &&
             (title.length < 2 ||
@@ -1210,7 +1214,7 @@ export function createMemoryTenantRepository(
               !categoryTitle ||
               !sku ||
               priceMinor <= 0n ||
-              item.stock - metadata.reserved <= 0)
+              (metadata.status !== 'published' && item.stock - metadata.reserved <= 0))
           ) {
             throw new Error('CATALOG_PUBLISH_INVALID');
           }
@@ -1605,6 +1609,66 @@ export function createMemoryTenantRepository(
             tenantId: input.tenantId,
             actorId: input.userId,
             reason: input.reason.trim(),
+            versionBefore,
+            versionAfter: version.version,
+            createdAt: now,
+          });
+          return merchantSettingsSnapshot(state, input.tenantId, input.testMode, role)!;
+        },
+      );
+    },
+    async publishMerchantShop(input) {
+      const role = requireMembership(state, input.userId, input.tenantId, ['owner', 'admin']);
+      return runMerchantCommand(
+        state,
+        {
+          userId: input.userId,
+          operation: `shop:publish:${input.tenantId}`,
+          idempotencyKey: input.idempotencyKey,
+          requestHash: input.requestHash,
+        },
+        () => {
+          const shop = state.shops.get(input.tenantId);
+          const version = state.shopVersions.get(input.tenantId);
+          if (!shop || !version || shop.status === 'archived') {
+            throw new Error('TENANT_UNKNOWN');
+          }
+          if (version.version !== input.expectedVersion) {
+            throw new Error('SETTINGS_VERSION_CONFLICT');
+          }
+          const target = input.published ? 'published' : 'draft';
+          if (shop.status === target) {
+            return merchantSettingsSnapshot(state, input.tenantId, input.testMode, role)!;
+          }
+          if (shop.status === 'suspended') {
+            throw new Error('SHOP_PUBLISH_INVALID');
+          }
+          if (
+            input.published &&
+            !(state.catalog.get(input.tenantId) ?? []).some((item) => {
+              const metadata = catalogMetadata(state, input.tenantId, item);
+              return (
+                item.published &&
+                metadata.status === 'published' &&
+                BigInt(item.priceMinor) > 0n &&
+                item.stock - metadata.reserved > 0
+              );
+            })
+          ) {
+            throw new Error('SHOP_PUBLISH_INVALID');
+          }
+          const versionBefore = version.version;
+          const now = new Date().toISOString();
+          shop.status = target;
+          if (input.published) {
+            shop.publishedAt = shop.publishedAt ?? now;
+          }
+          version.version += 1;
+          version.updatedAt = now;
+          state.shopAudits.push({
+            tenantId: input.tenantId,
+            actorId: input.userId,
+            reason: input.published ? 'Shop published' : 'Shop unpublished',
             versionBefore,
             versionAfter: version.version,
             createdAt: now,

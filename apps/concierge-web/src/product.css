@@ -3,9 +3,7 @@
   --glass-fill-strong: rgba(255, 255, 255, 0.4);
   --glass-stroke: rgba(255, 255, 255, 0.58);
   --glass-blur: blur(36px) saturate(180%);
-  --glass-shadow:
-    0 18px 48px rgba(8, 18, 38, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --glass-shadow: 0 18px 48px rgba(8, 18, 38, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 body[data-page='app'],
@@ -1126,6 +1124,10 @@ form.composer .composer-box button[type='submit']:disabled {
   max-width: 54ch;
 }
 
+.route-status-actions {
+  margin-top: 1.25rem;
+}
+
 .status-code {
   margin: 0;
   color: var(--red);
@@ -1177,12 +1179,21 @@ form.composer .composer-box button[type='submit']:disabled {
   pointer-events: none;
 }
 
+.home-hero-media video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}
+
+.home-hero-media video::-webkit-media-controls {
+  display: none !important;
+}
+
 .home-hero-media::after {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(8, 18, 38, 0.58) 0%, rgba(8, 18, 38, 0.22) 46%, transparent 74%),
+    linear-gradient(90deg, rgba(8, 18, 38, 0.7) 0%, rgba(8, 18, 38, 0.42) 40%, transparent 72%),
     linear-gradient(180deg, rgba(8, 18, 38, 0.18) 0%, transparent 28%, rgba(8, 18, 38, 0.28) 100%);
 }
 
@@ -1194,7 +1205,8 @@ form.composer .composer-box button[type='submit']:disabled {
 
 .home-hero .eyebrow,
 .home-hero .home-lede {
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 12px rgba(8, 18, 38, 0.6);
 }
 
 .home-hero .quiet-link {
@@ -1215,7 +1227,10 @@ form.composer .composer-box button[type='submit']:disabled {
 
 .home-hero .home-copy h1 {
   color: #fff;
-  text-shadow: 0 12px 40px rgba(8, 18, 38, 0.28);
+  /* The film's sky and bubbles are pale; a tight shadow keeps the headline legible on any frame. */
+  text-shadow:
+    0 2px 6px rgba(8, 18, 38, 0.45),
+    0 12px 40px rgba(8, 18, 38, 0.5);
 }
 
 .home-lede {
@@ -1247,6 +1262,18 @@ body[data-page='landing'] .global-header {
   backdrop-filter: none;
 }
 
+/* Pages that scroll under the sticky header need a glass bar and a darker film. */
+body[data-page='landing']:not(:has(.home-hero)) .global-header {
+  background: rgba(8, 18, 38, 0.38);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+body[data-page='landing']:not(:has(.home-hero)) .home-hero-media::after {
+  background: rgba(8, 18, 38, 0.45);
+}
+
 body[data-page='landing'] .wordmark,
 body[data-page='landing'] .global-nav a,
 body[data-page='landing'] .auth-actions a,
@@ -1272,7 +1299,8 @@ body[data-page='landing'] .site-footer {
   background: transparent;
 }
 
-body[data-page='landing'] .site-footer span:first-child {
+body[data-page='landing'] .site-footer span:first-child,
+body[data-page='landing'] .site-footer a {
   color: #fff;
 }
 
@@ -1350,6 +1378,7 @@ body[data-page='landing'] .storefront-page .eyebrow,
 body[data-page='landing'] .directory-mast > p:last-child,
 body[data-page='landing'] .editorial-head > p,
 body[data-page='landing'] .storefront-mast > p,
+body[data-page='landing'] .storefront-actions p,
 body[data-page='landing'] .storefront-refund,
 body[data-page='landing'] .result-count,
 body[data-page='landing'] .back-link {
@@ -1493,6 +1522,19 @@ body[data-page='landing'] .chat-col {
 @media (prefers-reduced-motion: reduce) {
   .home-hero-media video {
     display: none;
+  }
+}
+
+/* Landscape phones: the hero is taller than the screen, so let it scroll. */
+@media (max-height: 560px) {
+  body[data-page='landing']:has(.home-hero),
+  body[data-page='landing']:has(.home-hero) .site-shell {
+    height: auto;
+    overflow: auto;
+  }
+
+  body[data-page='landing']:has(.home-hero) .site-footer {
+    position: relative;
   }
 }
 
@@ -1808,6 +1850,29 @@ body[data-page='landing'] .chat-col {
   font-size: 1.15rem;
 }
 
+.agent-token {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.agent-token h2 {
+  margin: 0 0 0.4rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 520;
+}
+
+.agent-token-status {
+  min-height: 1.2em;
+  margin: 0.5rem 0 0;
+  font-size: 0.86rem;
+}
+
 .shop-facts,
 .profile-list {
   display: grid;
@@ -1948,6 +2013,32 @@ body[data-page='landing'] .chat-col {
   padding: 0.6rem 0.7rem;
   border-left: 3px solid var(--red);
   background: rgba(255, 255, 255, 0.3);
+}
+
+.form-notice {
+  padding: 0.6rem 0.7rem;
+  border-left: 3px solid #0f7a55;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.form-notice p {
+  margin: 0;
+}
+
+.form-notice p + p {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.auth-sheet .field-hint {
+  display: block;
+  margin: -0.55rem 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .product-shell {
@@ -3202,6 +3293,19 @@ body[data-page='landing'] .chat-col {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
+.catalog-card .catalog-card-thumb {
+  width: 100%;
+  height: auto;
+  flex: none;
+  aspect-ratio: 4 / 3;
+  margin-top: 0.75rem;
+}
+
+.product-grid.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
 .catalog-card-head {
   display: flex;
   flex-wrap: wrap;
@@ -3442,6 +3546,24 @@ body[data-page='landing'] .chat-col {
     font-size: clamp(3.2rem, 15vw, 5rem);
   }
 
+  /* Portrait phones: show the sky and bubbles side of the film and shade it top to bottom. */
+  .home-hero-media video {
+    object-position: 20% center;
+  }
+
+  .home-hero-media::after {
+    background: linear-gradient(180deg, rgba(8, 18, 38, 0.35) 0%, rgba(8, 18, 38, 0.6) 100%);
+  }
+
+  .global-nav {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .global-nav a {
+    padding-inline: 0.55rem;
+  }
+
   .editorial-actions > a {
     width: 100%;
     justify-content: center;
@@ -3531,8 +3653,13 @@ body[data-page='landing'] .chat-col {
     padding-top: 2rem;
   }
 
+  /* Put the form above the marketing copy so it is visible without scrolling. */
+  .auth-sheet {
+    order: -1;
+  }
+
   .auth-context h2 {
-    font-size: 2.7rem;
+    font-size: 1.8rem;
   }
 
   .workspace {

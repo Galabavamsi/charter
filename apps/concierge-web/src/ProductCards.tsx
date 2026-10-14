@@ -203,6 +203,7 @@ export function ShopShelf({
   quantityFor,
   onQuantity,
   busy = false,
+  emptyText = 'No items match that search.',
   onClose,
   onBuyNow,
 }: {
@@ -216,6 +217,8 @@ export function ShopShelf({
   quantityFor: (item: CatalogVisualItem) => number;
   onQuantity: (item: CatalogVisualItem, quantity: number) => void;
   busy?: boolean;
+  /** Copy when nothing is listed (empty cart, catalog down, or no search match). */
+  emptyText?: string;
   onClose: () => void;
   onBuyNow?: () => void;
 }) {
@@ -267,7 +270,7 @@ export function ShopShelf({
         ) : null}
         <p className="product-peek-hint">{hint}</p>
         {visible.length === 0 ? (
-          <p className="product-peek-hint">No items match that search.</p>
+          <p className="product-peek-hint">{emptyText}</p>
         ) : (
           <div className="product-cards product-shelf-list">
             {visible.map((item) => {

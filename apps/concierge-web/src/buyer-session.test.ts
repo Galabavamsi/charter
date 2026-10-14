@@ -14,6 +14,7 @@ import {
   lastShopResumePath,
   lastShopStorageKey,
   orderConfirmedCopy,
+  payStatusLabel,
   razorpayWorkCopy,
   rememberLastShop,
 } from './buyer-session';
@@ -111,9 +112,23 @@ describe('buyer shop resume', () => {
   it('turns checkout machine codes into a buyer sentence', () => {
     expect(buyerFacingError('CHECKOUT_KILLED')).toMatch(/paused/i);
     expect(buyerFacingError('FACTS_STALE')).toMatch(/quote changed/i);
-    expect(buyerFacingError('TURN_TIMEOUT')).toMatch(/too long/i);
+    expect(buyerFacingError('TURN_TIMEOUT')).toMatch(/longer than usual/i);
     expect(buyerFacingError('CHECKOUT_TIMEOUT')).toMatch(/did not open/i);
+    expect(buyerFacingError('DAILY_LIMIT_REACHED')).toMatch(/today’s demo limit/i);
+    expect(buyerFacingError('RECONCILIATION_REQUIRED')).toMatch(/still being confirmed/i);
+    expect(buyerFacingError('RECONCILIATION_REQUIRED')).not.toMatch(/no payment was made/i);
+    expect(buyerFacingError('TURN_TIMEOUT')).not.toMatch(/refresh/i);
+    expect(buyerFacingError('HTTP_502')).toMatch(/snag/i);
+    expect(buyerFacingError('HTTP_504')).not.toMatch(/HTTP_504/);
     expect(buyerFacingError('UNKNOWN_CODE')).toMatch(/UNKNOWN_CODE/);
+  });
+
+  it('labels pay status tags in buyer words, not enum names', () => {
+    expect(payStatusLabel('SETTLED')).toBe('Paid');
+    expect(payStatusLabel('FAILED_PROVISIONAL')).toBe('Not confirmed');
+    expect(payStatusLabel('CAPTURE_PENDING')).toBe('Awaiting capture');
+    expect(payStatusLabel('RECONCILING')).toBe('Checking');
+    expect(payStatusLabel('CREATED')).toBe('Awaiting payment');
   });
 
   it('lets the grounded-facts line wrap instead of CSS-ellipsis', () => {

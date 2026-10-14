@@ -1,9 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import {
-  expectReadableHeading,
-  expectReducedMotionDuration,
-  expectSkipToMain,
-} from './a11y';
+import { expectReadableHeading, expectReducedMotionDuration, expectSkipToMain } from './a11y';
 
 const MCP_TOOL_NAMES = [
   'agent.capabilities',
@@ -116,9 +112,7 @@ test.describe('Charter evaluator journeys', () => {
 
   test('public home, directory, and auth labels', async ({ page }) => {
     await page.goto('/');
-    await expect(
-      page.getByRole('heading', { name: /Shop by talking/i }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Shop by talking/i })).toBeVisible();
 
     await page.goto('/shops');
     await expect(page.getByRole('heading', { name: 'Shop directory' })).toBeVisible();
@@ -270,5 +264,4 @@ test.describe('Charter evaluator journeys', () => {
     expect(mcpItem).toEqual(httpItem);
     expect(mcpBody.merchant?.currency ?? 'INR').toBe(httpBody.merchant?.currency ?? 'INR');
   });
-
 });

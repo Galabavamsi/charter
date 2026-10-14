@@ -54,7 +54,16 @@ export async function loadMigrationFiles(
 }
 
 async function ensureMigrationTable(db: Kysely<Database>): Promise<void> {
+  // Several migrations grant to charter_app before `db:provision-role` runs, so a
+  // fresh database needs the role first. provision-role sets login and password.
   await sql`
+    do $$
+    begin
+      if not exists (select 1 from pg_roles where rolname = 'charter_app') then
+        create role charter_app nologin;
+      end if;
+    end
+    $$;
     create schema if not exists charter_migrations;
     create table if not exists charter_migrations.schema_migrations (
       id text primary key,

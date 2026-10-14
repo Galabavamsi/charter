@@ -12,6 +12,7 @@ const SORTS = new Set(['relevance', 'newest', 'name', 'rating']);
 
 export type CharterCommerceToolName =
   | 'agent.capabilities'
+  | 'shops.search'
   | 'catalog.search'
   | 'catalog.detail'
   | 'cart.create'
@@ -48,7 +49,15 @@ export const CHARTER_COMMERCE_TOOLS: readonly CharterCommerceTool[] = [
     auth: 'none',
     local: true,
     description:
-      'Returns the honest evaluator capability manifest. Not a UCP/ACP/AP2 certification.',
+      'Returns the capability manifest (Razorpay test mode). Not a UCP/ACP/AP2 certification.',
+  },
+  {
+    name: 'shops.search',
+    method: 'GET',
+    path: '/api/v1/shops',
+    mutation: false,
+    auth: 'none',
+    description: 'Search the public shop directory. Returns shop slugs for the catalog tools.',
   },
   {
     name: 'catalog.search',
@@ -271,6 +280,16 @@ export function resolveMcpToolCall(
   if (tool.local) {
     return { name: tool.name, local: true, mutation: false, auth: 'none' };
   }
+  if (canonical === 'shops.search') {
+    return {
+      name: canonical,
+      local: false,
+      method: 'GET',
+      path: withQuery('/api/v1/shops', catalogQuery(args)),
+      mutation: false,
+      auth: 'none',
+    };
+  }
   if (canonical === 'catalog.search' || canonical === 'catalog.detail') {
     const slug = shopSlug(args);
     const sku = skuArg(args, false);
@@ -379,10 +398,12 @@ export function buildCharterCommerceDiscovery(input: {
       paymentCredentials: 'hosted-razorpay-checkout-only',
     },
     mcp: {
+      endpoint: '/mcp',
+      transport: 'streamable-http',
       tools: '/mcp/tools',
       call: '/mcp/call',
       protocolStatus: 'evaluator-http-adapter',
-      note: 'Thin adapter over /api. No database or Razorpay credentials in the adapter. Caller JWT is forwarded; the adapter cannot bypass first-party authorization.',
+      note: 'POST /mcp is a stateless MCP server (JSON-RPC 2.0, Streamable HTTP). /mcp/tools and /mcp/call are the older plain-HTTP adapter. Both are thin layers over /api with no database or Razorpay credentials; the caller JWT is forwarded and cannot bypass first-party authorization.',
     },
     resources: {
       health: '/health',

@@ -1,6 +1,7 @@
 import { getTenantVariant, listVariants } from '@charter/catalog';
 import {
   addLine,
+  assertQuoteFactsFresh,
   cartTotals,
   createCart,
   freezeQuote,
@@ -61,7 +62,19 @@ function resolveSku(tenantId: string, input: string): string | undefined {
     return trimmed;
   }
   const needle = trimmed.toLowerCase();
+  // '' or 'it' would substring-match the first product; ask instead of guessing.
+  if (needle.length < 3) {
+    return undefined;
+  }
   return listVariants(tenantId).find((row) => haystack(row).includes(needle))?.sku;
+}
+
+/** catalog.search results sent back to the model; the rest is a count, not tokens. */
+const SEARCH_RESULT_LIMIT = 12;
+
+/** Some models flatten dotted tool names ('cart_add_line'); map them back. */
+export function normalizeToolName(name: string): string {
+  return name.trim().replace(/^(catalog|cart|checkout)[_-]/, '$1.');
 }
 
 function searchCatalog(tenantId: string, rawQuery: string) {
@@ -201,13 +214,20 @@ export async function executeTool(
   rawArgs: Record<string, unknown>,
   hooks: OrchestratorHooks,
 ): Promise<unknown> {
-  switch (name) {
+  switch (normalizeToolName(name)) {
     case 'catalog.search': {
       conversation.catalogLoaded = true;
       const query = typeof rawArgs.query === 'string' ? rawArgs.query : '';
-      const items = searchCatalog(conversation.tenantId, query);
+      const all = searchCatalog(conversation.tenantId, query);
+      // Every result lands in the stored history; a full catalog per browse turn
+      // inflates tokens and latency on each later model round.
+      const items = all.slice(0, SEARCH_RESULT_LIMIT);
       await hooks.recordCatalogSearch?.({ query, items });
-      return { items, next: nextHint(conversation.cartId, conversation.quoteId) };
+      return {
+        items,
+        total: all.length,
+        next: nextHint(conversation.cartId, conversation.quoteId),
+      };
     }
     case 'cart.create': {
       const cart = createCart(conversation.tenantId);
@@ -223,6 +243,10 @@ export async function executeTool(
       return { cart, next: nextHint(conversation.cartId, conversation.quoteId) };
     }
     case 'cart.add_line': {
+      // Same lock as set_quantity: a paid or pay-bound cart must never grow.
+      if (conversation.quoteId) {
+        return { error: 'QUOTE_LOCKED', quote: serializeQuote(conversation.quoteId) };
+      }
       const requested = typeof rawArgs.sku === 'string' ? rawArgs.sku : '';
       const sku = resolveSku(conversation.tenantId, requested);
       if (!sku) {
@@ -334,10 +358,30 @@ export async function executeTool(
       if (!conversation.cartId) {
         return { error: 'CART_NOT_FOUND' };
       }
+      const existing = conversation.quoteId ? getQuote(conversation.quoteId) : undefined;
+      if (existing && existing.status !== 'FROZEN') {
+        // Bound to a Razorpay Order or already paid: re-quoting would offer a second payment.
+        return { error: 'QUOTE_LOCKED', quote: serializeQuote(existing.id) };
+      }
+      if (
+        existing &&
+        existing.cartId === conversation.cartId &&
+        existing.cartVersion === getCart(conversation.cartId)?.version
+      ) {
+        // Same cart, still-fresh facts: reuse the lock instead of burning offer budget.
+        try {
+          assertQuoteFactsFresh(existing);
+          return { quote: serializeQuote(existing.id) };
+        } catch {
+          /* stale facts: freeze a fresh quote below */
+        }
+      }
       try {
         const quote = freezeQuote(conversation.cartId);
-        conversation.quoteId = quote.id;
         await hooks.persistQuote?.(quote.id);
+        // Only a persisted quote may lock the chat; otherwise the next request
+        // cannot hydrate it and every edit returns QUOTE_LOCKED.
+        conversation.quoteId = quote.id;
         return { quote: serializeQuote(quote.id) };
       } catch (error) {
         return { error: error instanceof Error ? error.message : 'QUOTE_ERROR' };
@@ -363,16 +407,30 @@ export async function executeTool(
   }
 }
 
-export function parseToolArguments(raw: string): Record<string, unknown> {
-  if (!raw.trim()) {
+/**
+ * Tool-call arguments as an object. Returns undefined for non-empty arguments
+ * that are not a JSON object, so the caller can ask the model to retry instead
+ * of acting on a guess (an empty sku used to add the first catalog item).
+ */
+export function parseToolArguments(raw: unknown): Record<string, unknown> | undefined {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (raw === undefined || raw === null || (typeof raw === 'string' && !raw.trim())) {
     return {};
+  }
+  if (typeof raw !== 'string') {
+    return undefined;
   }
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    if (parsed === null) {
+      return {};
+    }
+    return typeof parsed === 'object' && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
-      : {};
+      : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 }

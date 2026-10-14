@@ -1,7 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const liveOrigin =
-  process.env.PLAYWRIGHT_BASE_URL ?? 'https://core-api-production-087b.up.railway.app';
+const liveOrigin = process.env.PLAYWRIGHT_BASE_URL ?? 'https://charter.humanslop.in';
 
 /**
  * Origin smoke against the live same-origin evaluator.

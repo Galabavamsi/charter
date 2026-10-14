@@ -1,7 +1,13 @@
 import { FIREWORKS_DEFAULT_MODEL, TOOL_DEFINITIONS, type ChatMessage } from '../domain/index.js';
 
+/** Turn facts a scripted client needs and a live model ignores. */
+export type ModelTurnContext = {
+  /** A locked total existed before the shopper sent this message. */
+  hadQuote: boolean;
+};
+
 export type FireworksClient = {
-  complete(messages: ChatMessage[]): Promise<ChatMessage>;
+  complete(messages: ChatMessage[], context?: ModelTurnContext): Promise<ChatMessage>;
 };
 
 type FireworksResponse = {
@@ -9,16 +15,32 @@ type FireworksResponse = {
     message?: {
       role?: string;
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         id?: string;
         type?: string;
-        function?: { name?: string; arguments?: string };
+        function?: { name?: string; arguments?: unknown };
       }>;
     };
   }>;
 };
 
 export const FIREWORKS_TIMEOUT_MS = 8_000;
+
+/** Reasoning models can leak their scratchpad into content; never speak it. */
+export function stripThinking(content: string): string {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^\s*<think>[\s\S]*$/i, '')
+    .trim();
+}
+
+function toolArguments(raw: unknown): string {
+  if (typeof raw === 'string') {
+    return raw;
+  }
+  return JSON.stringify(raw ?? {});
+}
 
 export function createFireworksClient(
   apiKey: string,
@@ -53,19 +75,23 @@ export function createFireworksClient(
       if (!message) {
         throw new Error('FIREWORKS_EMPTY');
       }
+      // Some models omit tool-call ids or send arguments as an object; keep the
+      // call (with a synthetic id) instead of silently dropping the action.
+      const stamp = Date.now().toString(36);
       const toolCalls = (message.tool_calls ?? [])
-        .filter((row) => row.id && row.function?.name)
-        .map((row) => ({
-          id: row.id as string,
+        .filter((row) => row.function?.name)
+        .map((row, index) => ({
+          id: row.id || `call_${index}_${stamp}`,
           type: 'function' as const,
           function: {
             name: row.function?.name as string,
-            arguments: row.function?.arguments ?? '{}',
+            arguments: toolArguments(row.function?.arguments),
           },
         }));
+      const content = typeof message.content === 'string' ? stripThinking(message.content) : '';
       return {
         role: 'assistant' as const,
-        content: message.content ?? null,
+        content: content || null,
         ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
       };
     },

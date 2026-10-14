@@ -3,6 +3,9 @@ import type { ChatMessage } from './threads';
 
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
+/** Hard cap per Talk session (Vapi bills per minute). */
+export const TALK_MAX_SECONDS = 180;
+
 export type VoiceTranscriptEvent = {
   type?: unknown;
   role?: unknown;
@@ -28,11 +31,19 @@ export function voiceOrbState(phase: VoicePhase): ProcessState | null {
   if (phase === 'speaking') {
     return 'composing';
   }
-  if (phase === 'error') {
-    return 'solving';
-  }
+  // Errors show in the composer status line; no orb, so nothing looks busy.
   return null;
 }
+
+const VOICE_SETUP_COPY = 'Voice isn’t set up on this deployment yet. Type your message instead.';
+
+const VOICE_ERROR_STATUS: Record<string, string> = {
+  VAPI_NOT_READY: VOICE_SETUP_COPY,
+  VOICE_PUBLIC_URL_MISSING: VOICE_SETUP_COPY,
+  VOICE_AUTH_REQUIRED: 'Sign in again to use Talk.',
+  VOICE_NEEDS_HTTPS: 'Talk needs HTTPS. Open the https:// link.',
+  VOICE_ERROR: 'Voice dropped. Tap Talk to retry, or type.',
+};
 
 export function voiceStatusCopy(phase: VoicePhase, error?: string | null): string {
   if (phase === 'connecting') {
@@ -45,9 +56,50 @@ export function voiceStatusCopy(phase: VoicePhase, error?: string | null): strin
     return 'Speaking…';
   }
   if (phase === 'error') {
-    return error?.trim() || 'VOICE_ERROR';
+    const code = error?.trim() || 'VOICE_ERROR';
+    return VOICE_ERROR_STATUS[code] ?? code;
   }
   return 'Voice stopped.';
+}
+
+/** Vapi `status-update` messages carry why the call ended. */
+export function voiceEndedReason(message: unknown): string | null {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+  const record = message as Record<string, unknown>;
+  return record.type === 'status-update' && typeof record.endedReason === 'string'
+    ? record.endedReason
+    : null;
+}
+
+export function voiceCallEndCopy(endedReason: string | null | undefined): string {
+  if (endedReason === 'exceeded-max-duration') {
+    return 'Talk sessions end after 3 minutes. Tap Talk to keep going.';
+  }
+  if (endedReason === 'silence-timed-out') {
+    return 'Talk ended after a quiet stretch. Tap Talk to keep going.';
+  }
+  return voiceStatusCopy('idle');
+}
+
+/** True when the JWT's `exp` falls inside the next `seconds`; unreadable tokens count as fresh. */
+export function accessTokenExpiresWithin(
+  token: string,
+  seconds: number,
+  now = Date.now(),
+): boolean {
+  const payload = token.split('.')[1];
+  if (!payload) {
+    return false;
+  }
+  try {
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    return typeof exp === 'number' ? exp * 1000 < now + seconds * 1000 : false;
+  } catch {
+    return false;
+  }
 }
 
 function errorBlob(error: unknown): string {
@@ -94,6 +146,9 @@ export function voiceErrorCopy(error: unknown): string {
   if (/VOICE_PUBLIC_URL_MISSING|public.?url/i.test(text)) {
     return 'VOICE_PUBLIC_URL_MISSING';
   }
+  if (/VOICE_NEEDS_HTTPS/.test(text)) {
+    return 'VOICE_NEEDS_HTTPS';
+  }
   if (/VOICE_CONNECT_TIMEOUT/i.test(text)) {
     return 'Voice did not connect. Allow the microphone and try Talk again.';
   }
@@ -137,6 +192,10 @@ export function resolveVoiceModelBase(
 
 export async function requestTalkMicrophone(): Promise<void> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    // Browsers hide the mic API on plain http:// (e.g. a bare server IP).
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      throw new Error('VOICE_NEEDS_HTTPS');
+    }
     return;
   }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -182,14 +241,17 @@ export function voiceTranscriptFromMessage(event: VoiceTranscriptEvent): ChatMes
     return { role: 'you', text, source: 'voice' };
   }
   if (event.role === 'assistant') {
+    // 'Mm.' is the server's hold reply while the shopper is mid-sentence; not a real turn.
+    if (/^m+\.?$/i.test(text)) {
+      return null;
+    }
     return { role: 'concierge', text, source: 'voice' };
   }
   return null;
 }
 
 const VOICE_COALESCE_MS = 8_000;
-const HANGING_JOIN =
-  /(?:\b(?:the|a|an|to|and|or|for|of|if|when|just say)|["“][^"”]*)$/iu;
+const HANGING_JOIN = /(?:\b(?:the|a|an|to|and|or|for|of|if|when|just say)|["“][^"”]*)$/iu;
 const TRAILING_AMOUNT = /^(.*?)([₹Rs]{1,2}\s*)?(\d[\d,]*)\.?$/u;
 const LEADING_DIGITS = /^(\d[\d,]*)\.?$/u;
 
@@ -272,16 +334,16 @@ export function upsertVoiceTranscript(
   const liveUserVoice =
     last.role === 'you' && last.source === 'voice' && stamped.source === 'voice' && withinWindow;
   const liveConciergeVoice =
-    last.role === 'concierge' && last.source === 'voice' && stamped.source === 'voice' && withinWindow;
+    last.role === 'concierge' &&
+    last.source === 'voice' &&
+    stamped.source === 'voice' &&
+    withinWindow;
   if (liveUserVoice || liveConciergeVoice) {
     const text = joinVoiceFragments(last.text, stamped.text);
     if (text === last.text) {
       return messages;
     }
-    return [
-      ...messages.slice(0, -1),
-      { role: last.role, text, source: 'voice', at: now },
-    ];
+    return [...messages.slice(0, -1), { role: last.role, text, source: 'voice', at: now }];
   }
   return [...messages, stamped];
 }
@@ -298,8 +360,10 @@ export function buildTalkAssistant(input: {
     firstMessage: `Charter Concierge for ${input.merchantName}. What do you need?`,
     firstMessageInterruptionsEnabled: true,
     transcriber: {
-      provider: 'vapi',
-      language: 'en',
+      provider: 'deepgram',
+      model: 'nova-3',
+      language: 'en-IN',
+      fallbackPlan: { transcribers: [{ provider: 'vapi', language: 'en' }] },
     },
     model: {
       provider: 'custom-llm',
@@ -313,7 +377,9 @@ export function buildTalkAssistant(input: {
     },
     voice: {
       provider: 'vapi',
-      voiceId: 'Elliot',
+      voiceId: 'Naina',
+      version: 2,
+      fallbackPlan: { voices: [{ provider: 'vapi', voiceId: 'Elliot' }] },
     },
     credentials: [{ provider: 'custom-llm', apiKey: input.accessToken }],
     metadata: { shopSlug: input.shopSlug },
@@ -344,6 +410,7 @@ export function buildTalkAssistant(input: {
       backoffSeconds: 0.8,
       acknowledgementPhrases: ['okay', 'ok', 'right', 'uh-huh', 'yeah', 'mm-hmm', 'uh', 'um'],
     },
-    maxDurationSeconds: 600,
+    maxDurationSeconds: TALK_MAX_SECONDS,
+    silenceTimeoutSeconds: 30,
   };
 }

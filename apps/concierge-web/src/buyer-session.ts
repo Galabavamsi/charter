@@ -75,8 +75,10 @@ export function groundedConciergeCopy(): string {
 const BUYER_ERROR_COPY: Record<string, string> = {
   CHECKOUT_KILLED: 'Payments are paused for this shop. Try again later.',
   FACTS_STALE: 'The quote changed. Ask Concierge to freeze a new quote before paying.',
+  // With the reconcile fix, a dismiss with no payment is retry-safe; this code now means a
+  // payment attempt is still open at Razorpay, so never tell the buyer nothing was paid.
   RECONCILIATION_REQUIRED:
-    'The last payment is still being confirmed. Wait a moment, then retry the same order.',
+    'The last payment is still being confirmed. Wait a moment, then check payment status again.',
   QUOTE_NOT_FOUND: 'There is no frozen quote yet. Ask Concierge to freeze one first.',
   CART_NOT_FOUND: 'The cart is missing. Ask Concierge to add an item again.',
   SKU_UNKNOWN: 'That product is not in this shop’s catalog.',
@@ -90,16 +92,51 @@ const BUYER_ERROR_COPY: Record<string, string> = {
   CHECKOUT_SCRIPT_FAILED:
     'Razorpay Checkout could not open. Allow checkout.razorpay.com and try Pay again.',
   CHECKOUT_TIMEOUT: 'Razorpay Checkout did not open in time. Try Pay again.',
-  TURN_TIMEOUT: 'Buy now took too long. Try Buy now again.',
+  // Replies live only in this browser, so a refresh cannot recover one; the cart/total resync does.
+  TURN_TIMEOUT:
+    'Concierge is taking longer than usual. Your cart and total update here when it finishes; check them before sending again.',
   CONVERSATION_ERROR: 'Concierge could not complete that turn. Send the message again.',
+  RATE_LIMITED: 'Too many messages — wait a minute and try again.',
+  DAILY_LIMIT_REACHED: 'You have reached today’s demo limit — come back tomorrow.',
+  ORCHESTRATOR_ERROR: 'Concierge hit a snag. Send that again in a moment.',
+  CONFIG_PAYMENTS_NOT_READY: 'Payments are off in this demo right now.',
+  QUOTE_ALREADY_BOUND:
+    'Checkout is already open for this total. Finish it in Razorpay, or check payment status.',
+  CART_EMPTY: 'Your cart is empty. Add an item before Buy now.',
+  QUOTE_TOTAL_TOO_LOW: 'Razorpay needs a total of at least ₹1. Add an item before Buy now.',
+  QUOTE_LOCKED: 'This total is locked for checkout. Pay it, or start a new order to change items.',
+  TOOL_ARGS_INVALID: 'Concierge misread that request. Try saying it another way.',
+  CALLBACK_ERROR:
+    'Razorpay finished, but Charter could not confirm the payment yet. Check payment status.',
+  INVALID_CHECKOUT_SIGNATURE:
+    'Razorpay finished, but Charter could not confirm the payment yet. Check payment status.',
+  RESOURCE_FORBIDDEN: 'This chat is no longer available. Start a new chat to keep going.',
 };
+
+const SERVER_HICCUP_COPY = 'Concierge hit a snag. Send that again in a moment.';
 
 export function buyerFacingError(code: string): string {
   const known = BUYER_ERROR_COPY[code];
   if (known) {
     return known;
   }
+  if (code.startsWith('HTTP_5')) {
+    return SERVER_HICCUP_COPY;
+  }
   return `That step did not complete (${code}). Try again, or continue in this chat.`;
+}
+
+const PAY_STATUS_LABEL: Record<string, string> = {
+  SETTLED: 'Paid',
+  FAILED_PROVISIONAL: 'Not confirmed',
+  CAPTURE_PENDING: 'Awaiting capture',
+  RECONCILING: 'Checking',
+  CREATED: 'Awaiting payment',
+};
+
+/** Buyer label for the pay-status tag; never shows the raw enum. */
+export function payStatusLabel(status: string): string {
+  return PAY_STATUS_LABEL[status] ?? 'Checking';
 }
 
 export function conciergeWorkCopy(text: string): string {

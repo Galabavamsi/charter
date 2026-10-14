@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '@charter/config';
 import { createDb, sql, type Database, type Kysely } from '@charter/db';
@@ -602,6 +602,89 @@ describeWithPostgres('charter_app merchant repository', () => {
       to: '2026-08-31',
     });
     expect(metricsAfterRename.synthetic).toBe(true);
+  });
+
+  it('publishes a draft shop only with a sellable product and rejects duplicate SKUs', async () => {
+    const { tenantId, ownerId, viewerId } = await fixture();
+    const repository = createPostgresTenantRepository(appDb);
+    await sql`
+      update catalog.shops
+      set status = 'draft', published_at = null
+      where tenant_id = ${tenantId}
+    `.execute(ownerDb);
+    const settings = await repository.getMerchantSettings({
+      userId: ownerId,
+      tenantId,
+      testMode: true,
+    });
+    expect(settings).toMatchObject({ status: 'draft', publishedAt: null });
+    const publish = (expectedVersion: number, key: string, published = true) =>
+      repository.publishMerchantShop({
+        userId: ownerId,
+        tenantId,
+        expectedVersion,
+        published,
+        testMode: true,
+        idempotencyKey: key,
+        requestHash: createHash('sha256').update(key).digest('hex'),
+      });
+    await expect(publish(settings!.version, 'pg-publish-empty')).rejects.toThrow(
+      'SHOP_PUBLISH_INVALID',
+    );
+    await expect(
+      repository.publishMerchantShop({
+        userId: viewerId,
+        tenantId,
+        expectedVersion: settings!.version,
+        published: true,
+        testMode: true,
+        idempotencyKey: 'pg-publish-viewer',
+        requestHash: 'e'.repeat(64),
+      }),
+    ).rejects.toThrow('SHOP_MEMBERSHIP_REQUIRED');
+
+    const product = {
+      userId: ownerId,
+      tenantId,
+      // Its 38-character slug prefix ends on a hyphen, which used to fail the slug check.
+      title: 'Handwoven Cotton Table Runners Set of Two',
+      description: 'Hand-loomed cotton runners.',
+      category: 'Table linen',
+      sku: `runner.${tenantId}`,
+      material: 'other' as const,
+      priceMinor: '129900',
+      stock: 3,
+      status: 'published' as const,
+      idempotencyKey: 'pg-runner-create',
+      requestHash: 'b1'.repeat(32),
+    };
+    const created = await repository.createMerchantProduct(product);
+    expect(created).toMatchObject({ status: 'published', inventory: { available: 3 } });
+    await expect(
+      repository.createMerchantProduct({
+        ...product,
+        title: 'Runner duplicate',
+        idempotencyKey: 'pg-runner-duplicate',
+        requestHash: 'b2'.repeat(32),
+      }),
+    ).rejects.toThrow('CATALOG_SKU_CONFLICT');
+
+    const published = await publish(settings!.version, 'pg-publish-ready');
+    expect(published).toMatchObject({ status: 'published', version: settings!.version + 1 });
+    expect(published.publishedAt).toEqual(expect.any(String));
+    expect((await publish(settings!.version, 'pg-publish-ready')).version).toBe(published.version);
+    expect(await repository.findShopBySlug(settings!.slug)).toMatchObject({ tenantId });
+    const audits = await sql<{ reason: string }>`
+      select reason
+      from catalog.shop_audits
+      where tenant_id = ${tenantId}
+      order by version_after
+    `.execute(ownerDb);
+    expect(audits.rows.map((row) => row.reason)).toEqual(['Shop published']);
+
+    const unpublished = await publish(published.version, 'pg-unpublish', false);
+    expect(unpublished).toMatchObject({ status: 'draft', publishedAt: published.publishedAt });
+    expect(await repository.findShopBySlug(settings!.slug)).toBeUndefined();
   });
 
   it('excludes capture-then-refund in-window from captured GMV and failedUnresolvedPays', async () => {

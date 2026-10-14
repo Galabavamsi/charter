@@ -416,6 +416,116 @@ describe('member-scoped merchant API', () => {
     await app.close();
   });
 
+  it('rejects SKUs the storefront cannot link to and maps duplicate SKUs to 409', async () => {
+    const { repository, methods } = merchantRepository();
+    methods.createMerchantProduct.mockRejectedValueOnce(new Error('CATALOG_SKU_CONFLICT'));
+    const { app } = await buildServer(env, {
+      authVerifier: authVerifier(),
+      tenantRepository: repository,
+    });
+    const product = (sku: string, key: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/merchant/shops/${TENANT_ID}/catalog/products`,
+        headers: { ...bearer('catalog'), 'idempotency-key': key },
+        payload: {
+          title: 'Desk lamp',
+          description: 'Brass desk lamp.',
+          category: 'Lighting',
+          sku,
+          material: 'steel',
+          price: '1299.00',
+          stock: 2,
+          status: 'published',
+        },
+      });
+    const spaced = await product('LAMP 01', 'catalog-sku-spaced');
+    const duplicate = await product('lamp.brass-01', 'catalog-sku-duplicate');
+
+    expect(spaced.statusCode).toBe(400);
+    expect(spaced.json().error).toBe('VALIDATION_ERROR');
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error).toBe('CATALOG_SKU_CONFLICT');
+    await app.close();
+  });
+
+  it('publishes and unpublishes a shop for managers only', async () => {
+    const repository = createMemoryTenantRepository({
+      memberships: [
+        { userId: USERS.owner, tenantId: TENANT_ID, role: 'owner' },
+        { userId: USERS.catalog, tenantId: TENANT_ID, role: 'catalog' },
+      ],
+    });
+    const { app } = await buildServer(env, {
+      authVerifier: authVerifier(),
+      tenantRepository: repository,
+    });
+    const publish = (
+      token: keyof typeof USERS,
+      key: string | null,
+      payload: Record<string, unknown>,
+    ) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/merchant/shops/${TENANT_ID}/publish`,
+        headers: { ...bearer(token), ...(key ? { 'idempotency-key': key } : {}) },
+        payload,
+      });
+    const settings = await app.inject({
+      method: 'GET',
+      url: `/api/v1/merchant/shops/${TENANT_ID}/settings`,
+      headers: bearer('owner'),
+    });
+    expect(settings.json()).toMatchObject({ status: 'published' });
+    const version = settings.json().version as number;
+
+    const catalogWrite = await publish('catalog', 'shop-publish-catalog', {
+      expectedVersion: version,
+      published: false,
+    });
+    const missingKey = await publish('owner', null, { expectedVersion: version, published: false });
+    const unpublished = await publish('owner', 'shop-unpublish-001', {
+      expectedVersion: version,
+      published: false,
+    });
+    const hidden = await app.inject({ method: 'GET', url: '/api/v1/shops/northstar' });
+    const stale = await publish('owner', 'shop-publish-stale', {
+      expectedVersion: version,
+      published: true,
+    });
+    const republished = await publish('owner', 'shop-publish-001', {
+      expectedVersion: version + 1,
+      published: true,
+    });
+    vi.spyOn(repository, 'publishMerchantShop').mockRejectedValueOnce(
+      new Error('SHOP_PUBLISH_INVALID'),
+    );
+    const invalid = await publish('owner', 'shop-publish-invalid', {
+      expectedVersion: version + 2,
+      published: true,
+    });
+
+    expect(catalogWrite.statusCode).toBe(403);
+    expect(catalogWrite.json().error).toBe('SHOP_CAPABILITY_REQUIRED');
+    expect(missingKey.statusCode).toBe(400);
+    expect(unpublished.statusCode, unpublished.body).toBe(200);
+    expect(unpublished.json().settings).toMatchObject({
+      status: 'draft',
+      version: version + 1,
+    });
+    expect(hidden.statusCode).toBe(404);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error).toBe('SETTINGS_VERSION_CONFLICT');
+    expect(republished.statusCode, republished.body).toBe(200);
+    expect(republished.json().settings).toMatchObject({
+      status: 'published',
+      version: version + 2,
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json().error).toBe('SHOP_PUBLISH_INVALID');
+    await app.close();
+  });
+
   it('keeps viewers read-only and returns a stable version conflict', async () => {
     const { repository, methods } = merchantRepository();
     methods.updateMerchantRules.mockRejectedValueOnce(new Error('RULES_VERSION_CONFLICT'));

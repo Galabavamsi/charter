@@ -48,6 +48,13 @@ describe('Northstar canonical kit', () => {
     expect(gone.cart.lines).toEqual([]);
   });
 
+  it('refuses to freeze an empty cart into an unpayable ₹0 quote', () => {
+    const cart = createCart();
+    expect(() => freezeQuote(cart.id)).toThrow('CART_EMPTY');
+    expect(addLine(cart.id, 'brewer.clear-glass-500').decision.outcome).toBe('deny');
+    expect(() => freezeQuote(cart.id)).toThrow('CART_EMPTY');
+  });
+
   it('refuses an invalid cart quantity without changing lines', () => {
     const cart = createCart();
     addLine(cart.id, 'brewer.trailpress-steel-750');

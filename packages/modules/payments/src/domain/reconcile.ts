@@ -77,6 +77,18 @@ export function classifyReconciliation(input: {
       paymentAttempts,
     };
   }
+  // Closing Razorpay before any attempt leaves the Order 'created' with no
+  // payments. Nothing can be in flight, and the retry reuses this same Order
+  // (which Razorpay can only ever capture once), so reopening it is safe.
+  if (paymentAttempts.length === 0 && input.order.status === 'created') {
+    return {
+      quoteId: input.session.quoteId,
+      orderId: input.order.id,
+      orderStatus: input.order.status,
+      outcome: 'same_order_retry_safe',
+      paymentAttempts,
+    };
+  }
   if (
     paymentAttempts.length === 0 ||
     paymentAttempts.some((attempt) => !TERMINAL_FAILURE.has(attempt.status))

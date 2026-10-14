@@ -51,7 +51,7 @@ export async function observeTurn(config: AppConfig, turn: ObservedTurn): Promis
   });
   const generation = trace.generation({
     name: 'fireworks',
-    model: config.FIREWORKS_MODEL || 'accounts/fireworks/models/deepseek-v4-flash-0731',
+    model: config.FIREWORKS_MODEL || 'accounts/fireworks/models/deepseek-v4p1-flash',
     input: turn.input,
     metadata: {
       tools: redactTraces(turn.traces),

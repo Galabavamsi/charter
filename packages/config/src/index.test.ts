@@ -115,4 +115,26 @@ describe('loadConfig', () => {
       }),
     ).toThrow('SUPABASE_PUBLISHABLE_KEY_INVALID');
   });
+  it('names the offending variable but never its value in CONFIG_INVALID', () => {
+    let message = '';
+    try {
+      loadConfig({ ...base, LOG_LEVEL: 'warning-secret-value' });
+    } catch (error) {
+      message = error instanceof Error ? error.message : '';
+    }
+    expect(message).toMatch(/^CONFIG_INVALID: LOG_LEVEL: /);
+    expect(message).not.toContain('warning-secret-value');
+  });
+
+  it('defaults the daily demo turn caps and rejects non-positive values', () => {
+    const defaults = loadConfig(base);
+    expect(defaults.CHARTER_DAILY_TURNS_PER_USER).toBe(40);
+    expect(defaults.CHARTER_DAILY_TURNS_GLOBAL).toBe(400);
+    expect(
+      loadConfig({ ...base, CHARTER_DAILY_TURNS_PER_USER: '5' }).CHARTER_DAILY_TURNS_PER_USER,
+    ).toBe(5);
+    expect(() => loadConfig({ ...base, CHARTER_DAILY_TURNS_GLOBAL: '0' })).toThrow(
+      'CHARTER_DAILY_TURNS_GLOBAL',
+    );
+  });
 });

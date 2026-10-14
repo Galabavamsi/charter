@@ -169,12 +169,16 @@ export type MerchantRulesPreview = {
   }>;
 };
 
+export type MerchantShopStatus = 'draft' | 'published' | 'suspended';
+
 export type MerchantSettingsSnapshot = {
   version: number;
   name: string;
   blurb: string;
   slug: string;
   publicPath: string;
+  status: MerchantShopStatus;
+  publishedAt: string | null;
   synthetic: boolean;
   testMode: boolean;
   paymentAccountDisclosure: string;
@@ -324,6 +328,19 @@ export interface MerchantRepository {
       addressLine?: string;
       refundPolicy?: string;
       reason: string;
+      testMode: boolean;
+    } & MerchantCommand,
+  ): Promise<MerchantSettingsSnapshot>;
+  /**
+   * Moves a shop between draft and published. Publishing requires at least one
+   * published, priced, in-stock variant; otherwise SHOP_PUBLISH_INVALID.
+   */
+  publishMerchantShop(
+    input: {
+      userId: string;
+      tenantId: string;
+      expectedVersion: number;
+      published: boolean;
       testMode: boolean;
     } & MerchantCommand,
   ): Promise<MerchantSettingsSnapshot>;

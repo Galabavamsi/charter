@@ -6,6 +6,7 @@ import {
   buyerFacingError,
   conciergeWorkCopy,
   orderConfirmedCopy,
+  payStatusLabel,
   razorpayWorkCopy,
 } from './buyer-session';
 import { CatalogThumb } from './CatalogThumb';
@@ -40,20 +41,25 @@ import {
   type StoredQuote,
 } from './threads';
 import {
+  accessTokenExpiresWithin,
   buildTalkAssistant,
   coalesceSameTurnText,
   isTalkSessionActive,
   requestTalkMicrophone,
   resolveVoiceModelBase,
   startVoiceCall,
+  TALK_MAX_SECONDS,
   talkButtonLabel,
   upsertVoiceTranscript,
+  voiceCallEndCopy,
+  voiceEndedReason,
   voiceErrorCopy,
   voiceOrbState,
   voiceStatusCopy,
   voiceTranscriptFromMessage,
   type VoicePhase,
 } from './voiceTalk';
+import './concierge-extra.css';
 
 export function shouldSubmitComposerKey(event: {
   key: string;
@@ -154,6 +160,25 @@ export function checkoutFromBlockedCode(
   return null;
 }
 
+/** A quote the server marked SETTLED is paid: show the receipt, never Pay again. */
+export function settledPay(quote: Quote | null | undefined): CheckoutSession | null {
+  if (quote?.status !== 'SETTLED') {
+    return null;
+  }
+  return {
+    ...(quote.boundCheckoutId ? { id: quote.boundCheckoutId } : {}),
+    status: 'SETTLED',
+    copy: orderConfirmedCopy(quote, {
+      status: 'SETTLED',
+      copy: 'Payment captured. One Charter order; inventory will commit once.',
+    }),
+    paymentId: null,
+    providerStatus: 'captured',
+    retryAllowed: false,
+    reconciliationOutcome: 'captured',
+  };
+}
+
 export function withPaymentThreadMessage(
   messages: ChatMessage[],
   session: Pick<CheckoutSession, 'status' | 'copy'>,
@@ -183,29 +208,63 @@ export function withPaymentThreadMessage(
   return [...messages, { role: 'concierge', text }];
 }
 
+const CHECKABLE_PAY_STATUS = new Set(['FAILED_PROVISIONAL', 'CAPTURE_PENDING', 'RECONCILING']);
+
+export const TEST_MODE_PAY_HINT =
+  'Test mode — pay with UPI success@razorpay or Netbanking → Success. No real money moves.';
+
 export function FrozenQuotePayButtons({
   quoteDisplay,
   pay,
+  busy = false,
+  receiptHref = null,
+  newOrderHref = null,
+  testHint = false,
   onPay,
   onCheckStatus,
 }: {
   quoteDisplay: string;
   pay: CheckoutSession | null;
+  busy?: boolean;
+  /** Router links after capture; omitted where there is no router or a link elsewhere. */
+  receiptHref?: string | null;
+  newOrderHref?: string | null;
+  testHint?: boolean;
   onPay(): void;
   onCheckStatus(): void;
 }) {
+  if (pay?.status === 'SETTLED') {
+    return (
+      <>
+        {receiptHref ? (
+          <Link className="chat-move-link" to={receiptHref}>
+            View receipt
+          </Link>
+        ) : null}
+        {newOrderHref ? (
+          <Link className="chat-move-link chat-move-link-secondary" to={newOrderHref}>
+            Start a new order
+          </Link>
+        ) : null}
+      </>
+    );
+  }
   const retry = shouldShowSameOrderRetryControl(pay?.status, pay?.reconciliationOutcome);
+  const showPay = shouldRenderDirectPayButton(pay?.status, pay?.reconciliationOutcome);
   return (
     <>
-      {shouldRenderDirectPayButton(pay?.status, pay?.reconciliationOutcome) ? (
-        <button type="button" onClick={onPay}>
+      {showPay ? (
+        <button type="button" disabled={busy} onClick={onPay}>
           {retry ? 'Retry same order' : `Pay ${quoteDisplay}`}
         </button>
       ) : null}
-      {pay?.status === 'FAILED_PROVISIONAL' && !retry ? (
-        <button type="button" onClick={onCheckStatus}>
+      {pay && CHECKABLE_PAY_STATUS.has(pay.status) && !retry ? (
+        <button type="button" disabled={busy} onClick={onCheckStatus}>
           Check payment status
         </button>
+      ) : null}
+      {testHint && showPay ? (
+        <p className="chat-move-hint pay-test-hint">{TEST_MODE_PAY_HINT}</p>
       ) : null}
     </>
   );
@@ -225,6 +284,12 @@ type CheckoutLaunch = {
   copy?: string;
 };
 
+type ConversationSnapshot = {
+  quote?: Quote | null;
+  cart?: StoredCart | null;
+  checkout?: CheckoutLaunch | null;
+};
+
 type Trace = {
   name: string;
   result: { decision?: Decision; proposedDisplay?: string; error?: string };
@@ -242,6 +307,8 @@ type DemoProps = {
   autoSend?: boolean;
   onBound: (id: string) => void;
   onHistory: () => void;
+  /** Fresh buyer access token (Talk hands it to Vapi for the whole call). */
+  refreshAccessToken?: () => Promise<string | null>;
 };
 
 type VoiceClient = {
@@ -310,10 +377,13 @@ export function NorthstarDemo({
   autoSend = false,
   onBound,
   onHistory,
+  refreshAccessToken,
 }: DemoProps) {
   const [status, setStatus] = useState('Ready.');
   const [process, setProcess] = useState<ProcessState | null>(null);
-  const [pay, setPay] = useState<CheckoutSession | null>(null);
+  const [pay, setPay] = useState<CheckoutSession | null>(() =>
+    threadId ? settledPay(getThread({ userId, shopId: tenantId }, threadId)?.quote) : null,
+  );
   const [conversationId, setConversationId] = useState<string | null>(() =>
     threadId ? (getThread({ userId, shopId: tenantId }, threadId)?.conversationId ?? null) : null,
   );
@@ -334,20 +404,26 @@ export function NorthstarDemo({
   const [traces, setTraces] = useState<Trace[]>([]);
   const [voicePhase, setVoicePhase] = useState<VoicePhase>('idle');
   const [voiceReady, setVoiceReady] = useState(false);
-  const [, setRecoveryReady] = useState(false);
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [razorpayMode, setRazorpayMode] = useState<string | null>(null);
   const [recoveryWanted, setRecoveryWanted] = useState(false);
   const [recoveryNote, setRecoveryNote] = useState<string | null>(null);
   const [shop, setShop] = useState<
     Array<{ sku: string; title: string; priceDisplay: string; stock: number; material?: string }>
   >([]);
+  const [catalogFailed, setCatalogFailed] = useState(false);
   const vapiRef = useRef<VoiceClient | null>(null);
   const talkPoll = useRef<number | null>(null);
   const talkStarting = useRef(false);
   const talkGeneration = useRef(0);
-  const scroller = useRef<HTMLDivElement | null>(null);
+  const endedReasonRef = useRef<string | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLFormElement | null>(null);
   const composing = useRef(false);
   const autoSendStarted = useRef(false);
   const sendingRef = useRef(false);
+  const payingRef = useRef(false);
+  const payRef = useRef<CheckoutSession | null>(null);
   const localIdRef = useRef<string | null>(threadId);
   const sendChatRef = useRef<(text?: string, options?: { echo?: boolean }) => Promise<void>>(
     async () => undefined,
@@ -362,10 +438,15 @@ export function NorthstarDemo({
   logRef.current = log;
   quoteRef.current = quote;
   cartRef.current = cart;
+  payRef.current = pay;
   conversationRef.current = conversationId;
 
   useEffect(() => {
-    if (threadId && threadId === localId && log.length > 0) {
+    const ownThread = Boolean(
+      threadId && (threadId === localId || threadId === localIdRef.current),
+    );
+    // A brand-new chat gets its id mid-send or mid-Talk; that is still this chat, not a switch.
+    if (ownThread && (log.length > 0 || talkStarting.current || vapiRef.current)) {
       return;
     }
     const stored = threadId ? getThread(threadScope, threadId) : null;
@@ -382,7 +463,8 @@ export function NorthstarDemo({
     setShelf(null);
     setShelfQuery('');
     setDraft(stored ? '' : initialDraft);
-    setPay(null);
+    payRef.current = settledPay(stored?.quote);
+    setPay(payRef.current);
     setTraces([]);
     setRecoveryNote(null);
     setStatus(stored ? 'Continue this chat.' : 'Ready.');
@@ -404,16 +486,14 @@ export function NorthstarDemo({
   }, [initialDraft, threadId, threadScope]);
 
   useEffect(() => {
-    const transcript = scroller.current;
-    if (!transcript) {
+    if (logRef.current.length === 0) {
       return;
     }
-    if (typeof transcript.scrollTo === 'function') {
-      transcript.scrollTo({ top: transcript.scrollHeight });
-    } else {
-      transcript.scrollTop = transcript.scrollHeight;
-    }
-  }, [log, process]);
+    // The page (not only .transcript) may be the scroller, so bring the end sentinel into view,
+    // then the composer below it, so the latest reply sits just above the message box.
+    endRef.current?.scrollIntoView?.({ block: 'end' });
+    composerRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [log, process, quote?.id, pay?.status]);
 
   useEffect(() => {
     void loadRazorpay().catch(() => undefined);
@@ -429,8 +509,14 @@ export function NorthstarDemo({
         material?: string;
       }>;
     }>(`/v1/merchants/${tenantId}/catalog`)
-      .then((body) => setShop(body.items ?? []))
-      .catch(() => setShop([]));
+      .then((body) => {
+        setShop(body.items ?? []);
+        setCatalogFailed(false);
+      })
+      .catch(() => {
+        setShop([]);
+        setCatalogFailed(true);
+      });
   }, [tenantId]);
 
   useEffect(() => {
@@ -445,27 +531,12 @@ export function NorthstarDemo({
       return;
     }
     let cancelled = false;
-    void apiFetch<{ quote?: Quote | null; cart?: StoredCart | null }>(
+    void apiFetch<ConversationSnapshot>(
       `/v1/conversations/${conversationId}?shopSlug=${encodeURIComponent(shopSlug)}`,
     )
       .then((snap) => {
-        if (cancelled) {
-          return;
-        }
-        if (snap.quote) {
-          setQuote(snap.quote);
-        }
-        if (snap.cart !== undefined) {
-          const nextCart = cartSnapshotFromTurn({ cart: snap.cart, quote: snap.quote });
-          setCart(nextCart);
-          if (localIdRef.current) {
-            void ensureLocal(
-              logRef.current,
-              snap.quote ?? quoteRef.current,
-              conversationId,
-              nextCart,
-            );
-          }
+        if (!cancelled) {
+          applySnapshot(snap, conversationId);
         }
       })
       .catch(() => undefined);
@@ -475,10 +546,13 @@ export function NorthstarDemo({
   }, [conversationId, shopSlug]);
 
   useEffect(() => {
-    void apiFetch<{ voiceEnabled?: boolean; recoveryEnabled?: boolean }>('/v1/concierge/config')
+    void apiFetch<{ voiceEnabled?: boolean; recoveryEnabled?: boolean; razorpayMode?: string }>(
+      '/v1/concierge/config',
+    )
       .then((config) => {
         setVoiceReady(Boolean(config.voiceEnabled));
         setRecoveryReady(Boolean(config.recoveryEnabled));
+        setRazorpayMode(typeof config.razorpayMode === 'string' ? config.razorpayMode : null);
       })
       .catch(() => {
         setVoiceReady(false);
@@ -573,7 +647,7 @@ export function NorthstarDemo({
       return 'Recovery mail already sent for this checkout.';
     }
     if (attempt.reason === 'NOT_CONFIGURED') {
-      return 'Recovery mail skipped. AgentMail is not configured.';
+      return 'Email reminders are off in this demo.';
     }
     if (attempt.action === 'failed') {
       return `Recovery mail failed (${attempt.reason ?? 'send error'}).`;
@@ -606,17 +680,93 @@ export function NorthstarDemo({
   function recordCheckoutOutcome(session: CheckoutSession) {
     const copy = orderConfirmedCopy(quoteRef.current, session);
     const nextSession = copy === session.copy ? session : { ...session, copy };
+    payRef.current = nextSession;
     setPay(nextSession);
-    setStatus(copy);
+    setStatus(nextSession.status === 'SETTLED' ? 'Payment captured. Order confirmed.' : copy);
     setRecoveryNote(describeRecovery(nextSession.recovery));
     setProcess(null);
+    // Remember the capture on the quote itself so a reload shows the receipt, not Pay.
+    const current = quoteRef.current;
+    const settleQuote =
+      nextSession.status === 'SETTLED' &&
+      current !== null &&
+      (current.status !== 'SETTLED' || (!current.boundCheckoutId && Boolean(nextSession.id)));
+    if (settleQuote) {
+      const settled: Quote = {
+        ...current,
+        status: 'SETTLED',
+        boundCheckoutId: nextSession.id ?? current.boundCheckoutId ?? null,
+      };
+      quoteRef.current = settled;
+      setQuote(settled);
+    }
     const next = withPaymentThreadMessage(logRef.current, nextSession);
-    if (next === logRef.current) {
+    if (next === logRef.current && !settleQuote) {
       return;
     }
     logRef.current = next;
     setLog(next);
     void ensureLocal(next, quoteRef.current, conversationRef.current);
+  }
+
+  /** Take a quote from the server; a new quote id starts a fresh pay state. */
+  function adoptQuote(incoming: Quote): Quote {
+    const previous = quoteRef.current;
+    if (incoming.id !== previous?.id) {
+      payRef.current = null;
+      setPay(null);
+      setRecoveryNote(null);
+    }
+    // Never downgrade a capture this browser already saw for the same quote.
+    const next =
+      previous?.id === incoming.id && previous.status === 'SETTLED' && incoming.status !== 'SETTLED'
+        ? {
+            ...incoming,
+            status: previous.status,
+            boundCheckoutId: previous.boundCheckoutId ?? null,
+          }
+        : incoming;
+    quoteRef.current = next;
+    setQuote(next);
+    const settled = settledPay(next);
+    if (settled && payRef.current?.status !== 'SETTLED') {
+      payRef.current = settled;
+      setPay(settled);
+    }
+    return next;
+  }
+
+  function applySnapshot(snap: ConversationSnapshot, id: string) {
+    const nextQuote = snap.quote ? adoptQuote(snap.quote) : quoteRef.current;
+    if (snap.cart === undefined) {
+      if (snap.quote && localIdRef.current) {
+        void ensureLocal(logRef.current, nextQuote, id);
+      }
+      return;
+    }
+    // A restarted server can answer cart: null for a cart this browser still has; keep ours.
+    if (snap.cart === null && !snap.quote && cartRef.current?.lines.length) {
+      return;
+    }
+    const nextCart = cartSnapshotFromTurn({ cart: snap.cart, quote: snap.quote });
+    cartRef.current = nextCart;
+    setCart(nextCart);
+    if (localIdRef.current) {
+      void ensureLocal(logRef.current, nextQuote, id, nextCart);
+    }
+  }
+
+  async function syncSnapshot(id: string) {
+    try {
+      const snap = await apiFetch<ConversationSnapshot>(
+        `/v1/conversations/${id}?shopSlug=${encodeURIComponent(shopSlug)}`,
+      );
+      if (conversationRef.current === id) {
+        applySnapshot(snap, id);
+      }
+    } catch {
+      // best effort; the next turn or reload catches up
+    }
   }
 
   async function openCheckout(started: CheckoutLaunch) {
@@ -640,7 +790,13 @@ export function NorthstarDemo({
       if (!Number.isFinite(amount) || amount <= 0) {
         throw new Error('CHECKOUT_SCRIPT_FAILED');
       }
-      await grantAndBind(started.checkoutId);
+      try {
+        await grantAndBind(started.checkoutId);
+      } catch (error) {
+        // The email reminder is optional; it must never block the payment itself.
+        const code = error instanceof ApiError ? error.code : 'CONSENT_ERROR';
+        setRecoveryNote(`Email reminder not set up. ${buyerFacingError(code)}`);
+      }
       await loadRazorpay();
       if (!window.Razorpay) {
         throw new Error('CHECKOUT_SCRIPT_FAILED');
@@ -652,30 +808,60 @@ export function NorthstarDemo({
         name: started.name,
         description: started.description,
         order_id: started.orderId,
+        ...(email ? { prefill: { email } } : {}),
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id: string;
           razorpay_signature: string;
         }) => {
-          const result = await apiFetch<CheckoutSession>(
-            `/v1/checkouts/${started.checkoutId}/callback`,
-            {
-              method: 'POST',
-              body: JSON.stringify({ shopSlug, ...response }),
-            },
-          );
-          recordCheckoutOutcome(result);
-        },
-        modal: {
-          ondismiss: async () => {
+          setProcess('working');
+          setStatus('Confirming your payment with Razorpay…');
+          try {
             const result = await apiFetch<CheckoutSession>(
-              `/v1/checkouts/${started.checkoutId}/dismissed`,
+              `/v1/checkouts/${started.checkoutId}/callback`,
               {
                 method: 'POST',
-                body: JSON.stringify({ shopSlug }),
+                body: JSON.stringify({ shopSlug, ...response }),
               },
             );
             recordCheckoutOutcome(result);
+          } catch {
+            // Razorpay may have taken the money; record "not confirmed" so Check payment status shows.
+            recordCheckoutOutcome({
+              id: started.checkoutId,
+              status: 'FAILED_PROVISIONAL',
+              copy: buyerFacingError('CALLBACK_ERROR'),
+              paymentId: response.razorpay_payment_id ?? null,
+              providerStatus: null,
+            });
+          } finally {
+            setProcess(null);
+          }
+        },
+        modal: {
+          ondismiss: async () => {
+            try {
+              const result = await apiFetch<CheckoutSession>(
+                `/v1/checkouts/${started.checkoutId}/dismissed`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ shopSlug }),
+                },
+              );
+              recordCheckoutOutcome(result);
+              if (result.status === 'FAILED_PROVISIONAL' && !result.paymentId) {
+                // Closed without paying: re-check once so Retry shows without an extra click.
+                void checkPaymentStatus();
+              }
+            } catch {
+              recordCheckoutOutcome({
+                id: started.checkoutId,
+                status: 'FAILED_PROVISIONAL',
+                copy: 'Payment not confirmed. Check payment status before paying again.',
+                paymentId: null,
+                providerStatus: null,
+              });
+            }
           },
         },
       });
@@ -691,10 +877,12 @@ export function NorthstarDemo({
   }
 
   async function startQuoteCheckout(): Promise<CheckoutLaunch> {
-    if (!quote) {
+    // Refs, not render state: Razorpay callbacks call this from an older render.
+    const current = quoteRef.current;
+    if (!current) {
       throw new Error('QUOTE_NOT_FOUND');
     }
-    return apiFetch<CheckoutLaunch>(`/v1/quotes/${quote.id}/checkout`, {
+    return apiFetch<CheckoutLaunch>(`/v1/quotes/${current.id}/checkout`, {
       method: 'POST',
       body: JSON.stringify({ shopSlug }),
       signal: AbortSignal.timeout(20_000),
@@ -702,12 +890,29 @@ export function NorthstarDemo({
   }
 
   async function checkPaymentStatus() {
-    if (!quote) {
+    if (!quoteRef.current || payingRef.current) {
       return;
     }
+    payingRef.current = true;
     setProcess('working');
     setStatus(razorpayWorkCopy('check-status'));
+    const known = payRef.current;
     try {
+      if (known?.id && (known.status === 'CAPTURE_PENDING' || known.status === 'RECONCILING')) {
+        // A webhook may have settled it since; read the checkout instead of starting another.
+        const latest = await apiFetch<CheckoutSession>(
+          `/v1/checkouts/${known.id}?shopSlug=${encodeURIComponent(shopSlug)}`,
+        );
+        recordCheckoutOutcome({
+          id: latest.id ?? known.id,
+          status: latest.status,
+          copy: latest.copy,
+          paymentId: latest.paymentId ?? known.paymentId,
+          providerStatus: latest.providerStatus ?? known.providerStatus,
+          reconciliationOutcome: known.reconciliationOutcome ?? null,
+        });
+        return;
+      }
       const started = await startQuoteCheckout();
       if (started.status === 'SETTLED' || started.reconciliationOutcome === 'captured') {
         recordCheckoutOutcome({
@@ -758,8 +963,8 @@ export function NorthstarDemo({
       const blocked = checkoutFromBlockedCode(code);
       if (blocked) {
         recordCheckoutOutcome({
-          id: pay?.id,
-          paymentId: pay?.paymentId ?? null,
+          id: payRef.current?.id ?? quoteRef.current?.boundCheckoutId ?? undefined,
+          paymentId: payRef.current?.paymentId ?? null,
           ...blocked,
         });
       } else {
@@ -777,14 +982,16 @@ export function NorthstarDemo({
         setStatus(buyerFacingError(code));
       }
     } finally {
+      payingRef.current = false;
       setProcess(null);
     }
   }
 
   async function payFrozenQuote() {
-    if (!quote) {
+    if (!quoteRef.current || payingRef.current) {
       return;
     }
+    payingRef.current = true;
     setProcess('working');
     setStatus(razorpayWorkCopy('create-order'));
     try {
@@ -803,14 +1010,16 @@ export function NorthstarDemo({
       const blocked = checkoutFromBlockedCode(code);
       if (blocked) {
         recordCheckoutOutcome({
-          id: pay?.id,
-          paymentId: pay?.paymentId ?? null,
+          id: payRef.current?.id ?? quoteRef.current?.boundCheckoutId ?? undefined,
+          paymentId: payRef.current?.paymentId ?? null,
           ...blocked,
         });
       } else {
         setStatus(buyerFacingError(code));
       }
       setProcess(null);
+    } finally {
+      payingRef.current = false;
     }
   }
 
@@ -838,6 +1047,9 @@ export function NorthstarDemo({
       return;
     }
     sendingRef.current = true;
+    if (voicePhase === 'error') {
+      setVoicePhase('idle');
+    }
     setDraft('');
     setProcess('searching');
     setStatus(conciergeWorkCopy(text));
@@ -867,7 +1079,8 @@ export function NorthstarDemo({
       };
       let body: TurnResult;
       const turnController = new AbortController();
-      const turnTimer = window.setTimeout(() => turnController.abort(), 20_000);
+      // A tool-heavy model turn can take a while; give it room before calling it a timeout.
+      const turnTimer = window.setTimeout(() => turnController.abort(), 60_000);
       try {
         try {
           body = await apiFetch<TurnResult>(`/v1/conversations/${id}/turns`, {
@@ -876,7 +1089,19 @@ export function NorthstarDemo({
             signal: turnController.signal,
           });
         } catch (error) {
-          if (error instanceof ApiError && error.code === 'CONVERSATION_NOT_FOUND') {
+          if (
+            error instanceof ApiError &&
+            (error.code === 'CONVERSATION_NOT_FOUND' || error.code === 'RESOURCE_FORBIDDEN')
+          ) {
+            // The server lost this conversation (reset or re-seed): start a fresh one and drop
+            // the quote, cart and pay state that belonged to the old one.
+            quoteRef.current = null;
+            setQuote(null);
+            cartRef.current = null;
+            setCart(null);
+            payRef.current = null;
+            setPay(null);
+            picksDirty.current = false;
             const created = await apiFetch<{ id: string }>('/v1/conversations', {
               method: 'POST',
               body: JSON.stringify({ shopSlug }),
@@ -900,10 +1125,7 @@ export function NorthstarDemo({
       logRef.current = withReply;
       setLog(withReply);
       applyTraces(body.traces ?? []);
-      const nextQuote = body.quote ?? quoteRef.current;
-      if (body.quote) {
-        setQuote(body.quote);
-      }
+      const nextQuote = body.quote ? adoptQuote(body.quote) : quoteRef.current;
       const nextCart =
         body.cart !== undefined
           ? cartSnapshotFromTurn({ cart: body.cart, quote: nextQuote })
@@ -912,11 +1134,23 @@ export function NorthstarDemo({
         picksDirty.current = false;
       }
       setCart(nextCart);
+      const paid = nextQuote?.status === 'SETTLED' || payRef.current?.status === 'SETTLED';
       setStatus(
-        body.quote ? `Locked ${body.quote.totalDisplay}. Pay when you are ready.` : 'Ready.',
+        body.quote && !paid
+          ? `Locked ${body.quote.totalDisplay}. Pay when you are ready.`
+          : 'Ready.',
       );
       setProcess(null);
       await ensureLocal(withReply, nextQuote, id, nextCart);
+      const launch = body.checkout;
+      if (launch && typeof launch === 'object' && 'checkoutId' in launch && launch.checkoutId) {
+        // Typed "pay" / "yes": the server already prepared Razorpay, so open it like voice does.
+        setProcess('working');
+        setStatus(razorpayWorkCopy('open-checkout'));
+        void openCheckout(launch).catch(() => {
+          setStatus(buyerFacingError('CHECKOUT_SCRIPT_FAILED'));
+        });
+      }
     } catch (error) {
       const code =
         error instanceof ApiError
@@ -930,6 +1164,14 @@ export function NorthstarDemo({
       setLog(failed);
       setStatus(copy);
       setProcess(null);
+      const pendingId = conversationRef.current;
+      if (code === 'TURN_TIMEOUT' && pendingId) {
+        // The server keeps working after we stop waiting; pick up its cart/quote when it lands.
+        void syncSnapshot(pendingId);
+        window.setTimeout(() => void syncSnapshot(pendingId), 20_000);
+      } else if (echo) {
+        setDraft((current) => current || text);
+      }
     } finally {
       sendingRef.current = false;
     }
@@ -944,8 +1186,9 @@ export function NorthstarDemo({
       method: 'POST',
       body: JSON.stringify({ shopSlug }),
     });
+    conversationRef.current = created.id;
     setConversationId(created.id);
-    await ensureLocal(log, quote, created.id);
+    await ensureLocal(logRef.current, quoteRef.current, created.id);
     return created.id;
   }
 
@@ -975,14 +1218,16 @@ export function NorthstarDemo({
     }
     const client = vapiRef.current;
     vapiRef.current = null;
+    endedReasonRef.current = null;
     try {
       client?.stop();
     } catch {
       // already stopped
     }
     setVoicePhase(nextPhase);
-    setProcess(nextPhase === 'error' ? voiceOrbState('error') : null);
-    setStatus(nextStatus);
+    // Always clear: a stuck process disables Buy now, Browse shop and the quantity steppers.
+    setProcess(null);
+    setStatus(nextPhase === 'error' ? voiceStatusCopy('error', nextStatus) : nextStatus);
   }
 
   function bindTalkClient(vapi: VoiceClient, generation: number) {
@@ -1014,6 +1259,10 @@ export function NorthstarDemo({
       if (generation !== talkGeneration.current) {
         return;
       }
+      const endedReason = voiceEndedReason(message);
+      if (endedReason) {
+        endedReasonRef.current = endedReason;
+      }
       applyVoiceTranscript(message);
     });
     vapi.on('error', (error: unknown) => {
@@ -1032,7 +1281,7 @@ export function NorthstarDemo({
       if (generation !== talkGeneration.current) {
         return;
       }
-      stopTalkSession(voiceStatusCopy('idle'));
+      stopTalkSession(voiceCallEndCopy(endedReasonRef.current));
     });
   }
 
@@ -1045,6 +1294,7 @@ export function NorthstarDemo({
       return;
     }
     talkStarting.current = true;
+    endedReasonRef.current = null;
     const generation = talkGeneration.current;
     setVoicePhase('connecting');
     setProcess('connecting');
@@ -1070,9 +1320,16 @@ export function NorthstarDemo({
       if (generation !== talkGeneration.current) {
         return;
       }
-      const token = await getAccessToken();
+      let token = await getAccessToken();
       if (generation !== talkGeneration.current) {
         return;
+      }
+      if (token && refreshAccessToken && accessTokenExpiresWithin(token, TALK_MAX_SECONDS + 60)) {
+        // Vapi sends this token on every turn of the call, so it must outlive the call.
+        token = (await refreshAccessToken().catch(() => null)) ?? token;
+        if (generation !== talkGeneration.current) {
+          return;
+        }
       }
       if (!token) {
         stopTalkSession('VOICE_AUTH_REQUIRED', 'error');
@@ -1111,30 +1368,37 @@ export function NorthstarDemo({
       setVoicePhase('listening');
       setProcess('listening');
       setStatus(voiceStatusCopy('listening'));
+      let pollFailures = 0;
       talkPoll.current = window.setInterval(() => {
-        void fetchPendingConversationSnapshot<{
-          quote?: Quote | null;
-          cart?: StoredCart | null;
-          checkout?: CheckoutLaunch | null;
-        }>({
+        void fetchPendingConversationSnapshot<ConversationSnapshot>({
           conversationId: id,
           shopSlug,
-        }).then(async (snap) => {
-          if (!snap || generation !== talkGeneration.current) {
-            return;
-          }
-          if (snap.quote) {
-            setQuote(snap.quote);
-          }
-          if (snap.cart !== undefined) {
-            setCart(cartSnapshotFromTurn({ cart: snap.cart, quote: snap.quote }));
-          }
-          if (snap.checkout?.checkoutId) {
-            setProcess('working');
-            await openCheckout(snap.checkout);
-          }
-        });
-      }, 1500);
+        })
+          .then(async (snap) => {
+            pollFailures = 0;
+            if (!snap || generation !== talkGeneration.current) {
+              return;
+            }
+            if (snap.quote) {
+              adoptQuote(snap.quote);
+            }
+            if (snap.cart !== undefined) {
+              setCart(cartSnapshotFromTurn({ cart: snap.cart, quote: snap.quote }));
+            }
+            if (snap.checkout?.checkoutId) {
+              setProcess('working');
+              await openCheckout(snap.checkout);
+            }
+          })
+          .catch(() => {
+            // Stop hammering a failing API (shared rate limit); the call itself keeps going.
+            pollFailures += 1;
+            if (pollFailures >= 5 && talkPoll.current) {
+              window.clearInterval(talkPoll.current);
+              talkPoll.current = null;
+            }
+          });
+      }, 3000);
     } catch (error) {
       if (generation !== talkGeneration.current) {
         return;
@@ -1189,13 +1453,45 @@ export function NorthstarDemo({
     void sendChatRef.current(prompt, { echo: false });
   }
 
+  const movesBusy = Boolean(process) || talking;
+  // During Talk, process mirrors the voice orb; Pay stays usable there (payingRef guards repeats).
+  const payBusy = Boolean(process) && !talking;
+  const blankStarters = [
+    'What do you sell?',
+    shop[0] ? `Tell me about ${shop[0].title}` : 'What is popular here?',
+  ];
+
   return (
     <div className={quote || pay ? 'workspace has-rail' : 'workspace'}>
       <div className="chat-col">
-        <div className="transcript" ref={scroller}>
+        <div className="transcript">
           {log.length === 0 ? (
-            <div className="blank">
+            <div className="blank concierge-blank">
               <p>Ask, pick items, Buy now, and pay.</p>
+              <div className="starter-chips">
+                {shop.length > 0 && !quote ? (
+                  <button
+                    type="button"
+                    disabled={movesBusy}
+                    onClick={() => {
+                      setShelfQuery('');
+                      setShelf('browse');
+                    }}
+                  >
+                    {BROWSE_SHOP_LABEL}
+                  </button>
+                ) : null}
+                {blankStarters.map((starter) => (
+                  <button
+                    key={starter}
+                    type="button"
+                    disabled={movesBusy}
+                    onClick={() => void sendChatRef.current(starter)}
+                  >
+                    {starter}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
           {log.map((row, index) => (
@@ -1207,7 +1503,7 @@ export function NorthstarDemo({
                   <MentionedProducts
                     text={row.text}
                     items={shop}
-                    busy={Boolean(process) || talking}
+                    busy={movesBusy}
                     active={!quote}
                     locked={Boolean(quote)}
                     quantityFor={(item) => displayQuantity(picks, cart, item, shop)}
@@ -1220,7 +1516,7 @@ export function NorthstarDemo({
                         <button
                           type="button"
                           className="chat-move-secondary"
-                          disabled={Boolean(process) || talking}
+                          disabled={movesBusy}
                           onClick={() => {
                             setShelfQuery('');
                             setShelf('browse');
@@ -1233,7 +1529,7 @@ export function NorthstarDemo({
                         <button
                           type="button"
                           className="chat-move-secondary"
-                          disabled={Boolean(process) || talking}
+                          disabled={movesBusy}
                           onClick={() => {
                             setShelfQuery('');
                             setShelf('cart');
@@ -1246,7 +1542,7 @@ export function NorthstarDemo({
                         <button
                           type="button"
                           className="chat-move"
-                          disabled={Boolean(process) || talking}
+                          disabled={movesBusy}
                           onClick={submitBuyNow}
                         >
                           {BUY_NOW_LABEL}
@@ -1262,6 +1558,10 @@ export function NorthstarDemo({
                       <FrozenQuotePayButtons
                         quoteDisplay={quote.totalDisplay}
                         pay={pay}
+                        busy={payBusy}
+                        receiptHref={pay?.id ? `/orders/${pay.id}` : null}
+                        newOrderHref={`/buyer/${encodeURIComponent(shopSlug)}`}
+                        testHint={razorpayMode === 'test'}
                         onPay={() => void payFrozenQuote()}
                         onCheckStatus={() => void checkPaymentStatus()}
                       />
@@ -1273,20 +1573,22 @@ export function NorthstarDemo({
               )}
             </article>
           ))}
-          {process && voicePhase === 'idle' ? (
+          {process && !talking ? (
             <ProcessOrb state={process} label={status} size={64} theme="light" />
           ) : null}
           {voiceOrbState(voicePhase) ? (
             <ProcessOrb
               className="process-orb-voice"
               state={voiceOrbState(voicePhase)!}
-              label={voiceStatusCopy(voicePhase, voicePhase === 'error' ? status : null)}
+              label={voiceStatusCopy(voicePhase)}
               size={64}
               theme="light"
             />
           ) : null}
+          <div ref={endRef} className="transcript-end" aria-hidden="true" />
         </div>
         <form
+          ref={composerRef}
           className="composer"
           data-voice-phase={voicePhase}
           onSubmit={(event) => {
@@ -1298,6 +1600,7 @@ export function NorthstarDemo({
             <textarea
               id="buyer-composer"
               aria-label="Message to Concierge"
+              maxLength={1000}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onCompositionStart={() => {
@@ -1310,10 +1613,11 @@ export function NorthstarDemo({
                 if (!shouldSubmitComposerKey(event) || composing.current) {
                   return;
                 }
-                if (talking || (process && voicePhase === 'idle')) {
+                // Enter never adds a newline; while busy it simply waits.
+                event.preventDefault();
+                if (talking || process) {
                   return;
                 }
-                event.preventDefault();
                 void sendChat();
               }}
               placeholder="Message Concierge…"
@@ -1326,6 +1630,8 @@ export function NorthstarDemo({
                 aria-label={talkButtonLabel(voicePhase)}
                 aria-pressed={talking}
                 data-voice-ready={voiceReady ? 'true' : 'false'}
+                disabled={!voiceReady && !talking}
+                title={voiceReady || talking ? undefined : 'Voice is off in this demo'}
                 onClick={() => void toggleTalk()}
               >
                 <MicIcon />
@@ -1335,7 +1641,7 @@ export function NorthstarDemo({
                 type="submit"
                 className="composer-icon composer-send"
                 aria-label="Send"
-                disabled={talking || (Boolean(process) && voicePhase === 'idle')}
+                disabled={talking || Boolean(process) || !draft.trim()}
               >
                 <SendIcon />
                 <span className="sr-only">Send</span>
@@ -1346,7 +1652,8 @@ export function NorthstarDemo({
             className={
               status === 'Ready.' ||
               status === 'Continue this chat.' ||
-              isTalkSessionActive(voicePhase)
+              isTalkSessionActive(voicePhase) ||
+              Boolean(process)
                 ? 'sr-only'
                 : 'composer-note'
             }
@@ -1361,7 +1668,9 @@ export function NorthstarDemo({
         <aside className="rail">
           <details className="sheet catalog-strip">
             <summary>Catalog (optional)</summary>
-            {shop.length === 0 ? <p>Catalog is loading…</p> : null}
+            {shop.length === 0 ? (
+              <p>{catalogFailed ? 'Catalog unavailable right now.' : 'Catalog is loading…'}</p>
+            ) : null}
             {shop.map((item) => (
               <button
                 key={item.sku}
@@ -1398,13 +1707,14 @@ export function NorthstarDemo({
               <FrozenQuotePayButtons
                 quoteDisplay={quote.totalDisplay}
                 pay={pay}
+                busy={payBusy}
                 onPay={() => void payFrozenQuote()}
                 onCheckStatus={() => void checkPaymentStatus()}
               />
               {pay ? (
                 <div className="pay-status">
                   <span className="tag" data-tone={pay.status === 'SETTLED' ? 'ok' : 'hold'}>
-                    {pay.status}
+                    {payStatusLabel(pay.status)}
                   </span>
                   <ChatMarkdown text={pay.copy} />
                 </div>
@@ -1414,7 +1724,7 @@ export function NorthstarDemo({
                   <Link to={`/orders/${pay.id}`}>View buyer receipt</Link>
                 </p>
               ) : null}
-              {pay?.status === 'FAILED_PROVISIONAL' ? (
+              {recoveryReady && pay?.status === 'FAILED_PROVISIONAL' ? (
                 <>
                   <p>
                     <label>
@@ -1449,7 +1759,9 @@ export function NorthstarDemo({
                               })
                               .catch((error: unknown) => {
                                 setRecoveryNote(
-                                  error instanceof ApiError ? error.code : 'CONSENT_ERROR',
+                                  buyerFacingError(
+                                    error instanceof ApiError ? error.code : 'CONSENT_ERROR',
+                                  ),
                                 );
                               });
                           }}
@@ -1491,9 +1803,16 @@ export function NorthstarDemo({
           query={shelfQuery}
           onQuery={setShelfQuery}
           showSearch={shelf === 'browse'}
+          emptyText={
+            shelf === 'cart'
+              ? 'Your cart is empty — browse the shop to add something.'
+              : catalogFailed
+                ? 'Catalog unavailable right now. Ask Concierge in the chat instead.'
+                : 'No items match that search.'
+          }
           quantityFor={(item) => displayQuantity(picks, cart, item, shop)}
           onQuantity={applyPickQuantity}
-          busy={Boolean(process) || talking || Boolean(quote)}
+          busy={movesBusy || Boolean(quote)}
           onClose={() => setShelf(null)}
           onBuyNow={offerBuyNow ? submitBuyNow : undefined}
         />

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import { useAccount, useApi } from '../account';
 import { ApiError } from '../api';
 import { useAuth } from '../auth';
+import { useDocumentTitle } from '../document-title';
 import { RecordStatus } from '../merchant-components';
 import { PaperBill } from '../PaperBill';
 
@@ -78,6 +79,7 @@ export function OrdersPage() {
   const [orders, setOrders] = useState<BuyerOrderSummary[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
+  useDocumentTitle('Orders — Charter');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,7 +115,10 @@ export function OrdersPage() {
       </p>
       {status === 'loading' ? <p role="status">Loading orders…</p> : null}
       {status === 'error' ? (
-        <p role="alert">Orders unavailable{error ? ` (${error})` : ''}.</p>
+        <p role="alert">
+          Orders could not be loaded right now. Refresh to try again.
+          {error ? <small> ({error})</small> : null}
+        </p>
       ) : null}
       {status === 'ready' && orders.length === 0 ? (
         <p>
@@ -144,7 +149,7 @@ export function OrdersPage() {
                 <small>
                   {order.fulfillmentReady
                     ? 'Eligible for fulfillment'
-                    : 'Await captured evidence before fulfillment'}
+                    : 'Ships once payment is captured'}
                 </small>
                 <Link to={`/orders/${order.id}`}>View receipt</Link>
               </p>
@@ -161,12 +166,15 @@ export function OrderPage() {
   const { id = '' } = useParams();
   const [order, setOrder] = useState<BuyerOrderDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
+  useDocumentTitle('Receipt — Charter');
 
   useEffect(() => {
     const controller = new AbortController();
     setStatus('loading');
     setOrder(null);
-    void api<BuyerOrderDetail>(`/v1/orders/${id}`, { signal: controller.signal })
+    void api<BuyerOrderDetail>(`/v1/orders/${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+    })
       .then((body) => {
         if (controller.signal.aborted) {
           return;
@@ -178,7 +186,12 @@ export function OrderPage() {
         if (controller.signal.aborted) {
           return;
         }
-        setStatus(cause instanceof ApiError && cause.status === 404 ? 'missing' : 'error');
+        // A malformed id is rejected with 400; to the buyer it is simply not there.
+        setStatus(
+          cause instanceof ApiError && (cause.status === 404 || cause.status === 400)
+            ? 'missing'
+            : 'error',
+        );
       });
     return () => controller.abort();
   }, [api, id]);
@@ -196,7 +209,9 @@ export function OrderPage() {
       {status === 'missing' ? (
         <p role="alert">This receipt is not available for this account.</p>
       ) : null}
-      {status === 'error' ? <p role="alert">Receipt unavailable.</p> : null}
+      {status === 'error' ? (
+        <p role="alert">The receipt could not be loaded right now. Refresh to try again.</p>
+      ) : null}
       {order ? (
         <article className="order-detail paper-bill-detail" aria-label={`Receipt ${order.receipt}`}>
           <PaperBill
@@ -240,9 +255,49 @@ export function OrderPage() {
   );
 }
 
+function AgentTokenCopy() {
+  const auth = useAuth();
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  async function copy() {
+    try {
+      const token = await auth.getAccessToken();
+      if (!token || !navigator.clipboard) {
+        throw new Error('TOKEN_COPY_UNAVAILABLE');
+      }
+      await navigator.clipboard.writeText(token);
+      setState('copied');
+    } catch {
+      setState('failed');
+    }
+  }
+
+  return (
+    <div className="agent-token">
+      <h2>Agent access</h2>
+      <p>
+        Connect an MCP client to <code>/mcp</code> and send this token as{' '}
+        <code>Authorization: Bearer &lt;token&gt;</code> for buyer tools.{' '}
+        <Link to="/agents">How agents connect</Link>
+      </p>
+      <button type="button" onClick={() => void copy()}>
+        Copy access token for agents (expires in 1 h)
+      </button>
+      <p className="agent-token-status" role="status">
+        {state === 'copied'
+          ? 'Token copied. Treat it like a password and paste it only into your own agent.'
+          : state === 'failed'
+            ? 'Could not copy the token. Sign in again, then retry.'
+            : ''}
+      </p>
+    </div>
+  );
+}
+
 export function AccountPage() {
   const auth = useAuth();
   const { account } = useAccount();
+  useDocumentTitle('Account — Charter');
   return (
     <section className="account-page fade">
       <p className="eyebrow">Verified profile</p>
@@ -267,6 +322,7 @@ export function AccountPage() {
           <dd>{account?.platformRoles.join(', ') || 'None'}</dd>
         </div>
       </dl>
+      <AgentTokenCopy />
     </section>
   );
 }

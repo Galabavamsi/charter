@@ -3,6 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -14,7 +15,9 @@ import {
   shouldRenderDirectPayButton,
   shouldShowSameOrderRetry,
   shouldShowSameOrderRetryControl,
+  settledPay,
   shouldSubmitComposerKey,
+  TEST_MODE_PAY_HINT,
   withPaymentThreadMessage,
 } from './NorthstarDemo';
 import { setAccessTokenProvider } from './api';
@@ -180,6 +183,85 @@ describe('buyer pay surface', () => {
     expect(screen.queryByRole('button', { name: /pay /i })).toBeNull();
     expect(screen.queryByRole('button', { name: /retry same order/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /check payment status/i })).toBeNull();
+
+    rerender(
+      <FrozenQuotePayButtons
+        quoteDisplay="₹1,998.00"
+        pay={{
+          status: 'CAPTURE_PENDING',
+          copy: 'Awaiting capture.',
+          paymentId: 'pay_authorized',
+          providerStatus: 'authorized',
+        }}
+        onPay={onPay}
+        onCheckStatus={onCheckStatus}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /check payment status/i })).toBeVisible();
+  });
+
+  it('disables Pay while busy, hints test mode, and links the receipt after capture', () => {
+    const onPay = vi.fn();
+    const { rerender } = render(
+      <MemoryRouter>
+        <FrozenQuotePayButtons
+          quoteDisplay="₹899.00"
+          pay={null}
+          busy
+          testHint
+          onPay={onPay}
+          onCheckStatus={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Pay ₹899.00' })).toBeDisabled();
+    expect(screen.getByText(TEST_MODE_PAY_HINT)).toBeVisible();
+
+    rerender(
+      <MemoryRouter>
+        <FrozenQuotePayButtons
+          quoteDisplay="₹899.00"
+          pay={{
+            id: '83000000-0000-4000-8000-000000000001',
+            status: 'SETTLED',
+            copy: 'Payment captured.',
+            paymentId: null,
+            providerStatus: 'captured',
+          }}
+          receiptHref="/orders/83000000-0000-4000-8000-000000000001"
+          newOrderHref="/buyer/northstar"
+          testHint
+          onPay={onPay}
+          onCheckStatus={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button', { name: /pay /i })).toBeNull();
+    expect(screen.queryByText(TEST_MODE_PAY_HINT)).toBeNull();
+    expect(screen.getByRole('link', { name: 'View receipt' })).toHaveAttribute(
+      'href',
+      '/orders/83000000-0000-4000-8000-000000000001',
+    );
+    expect(screen.getByRole('link', { name: 'Start a new order' })).toHaveAttribute(
+      'href',
+      '/buyer/northstar',
+    );
+  });
+
+  it('derives a settled pay state only from a SETTLED quote', () => {
+    const quote = {
+      id: 'q-paid',
+      totalDisplay: '₹899.00',
+      deliveryBy: '2026-10-18',
+      merchant: 'Northstar Travel Coffee',
+      discountMinor: '0',
+      lines: [{ sku: 'mill.cast-iron', title: 'Cast iron mill', quantity: 1 }],
+    };
+    expect(settledPay(null)).toBeNull();
+    expect(settledPay({ ...quote, status: 'BOUND' })).toBeNull();
+    expect(
+      settledPay({ ...quote, status: 'SETTLED', boundCheckoutId: 'checkout-1' }),
+    ).toMatchObject({ id: 'checkout-1', status: 'SETTLED', providerStatus: 'captured' });
   });
 });
 
@@ -594,6 +676,12 @@ describe('payment outcome in the chat thread', () => {
     );
     expect(screen.getByRole('button', { name: 'More Cotton crew tee' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Talk' }).closest('.composer-box')).toBeTruthy();
+    // No voice config in this stub: Talk stays visible but says why it is off.
+    expect(screen.getByRole('button', { name: 'Talk' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Talk' })).toHaveAttribute(
+      'title',
+      'Voice is off in this demo',
+    );
     expect(screen.getByRole('button', { name: 'Send' }).closest('.composer-box')).toBeTruthy();
     await user.click(card);
     expect(screen.getByRole('dialog', { name: 'Cotton crew tee' })).toBeVisible();
@@ -862,6 +950,222 @@ describe('payment outcome in the chat thread', () => {
     expect(screen.queryByText('Show more products from this shop')).toBeNull();
   });
 
+  it('shows the receipt instead of Pay when a paid chat is reopened', () => {
+    upsertThread(
+      { userId: 'user-buyer', shopId: 'northstar-demo-in' },
+      {
+        id: 'thread-paid',
+        conversationId: null,
+        title: 'mill',
+        updatedAt: new Date().toISOString(),
+        messages: [
+          { role: 'you', text: 'Buy now' },
+          { role: 'concierge', text: capturedCopy },
+        ],
+        quote: {
+          id: 'q-paid',
+          totalDisplay: '₹899.00',
+          deliveryBy: '2026-10-18',
+          merchant: 'Northstar Travel Coffee',
+          discountMinor: '0',
+          lines: [{ sku: 'mill.cast-iron', title: 'Cast iron mill', quantity: 1 }],
+          status: 'SETTLED',
+          boundCheckoutId: '83000000-0000-4000-8000-000000000007',
+        },
+      },
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })),
+    );
+
+    render(
+      <MemoryRouter>
+        <NorthstarDemo
+          userId="user-buyer"
+          email="buyer@example.com"
+          tenantId="northstar-demo-in"
+          shopSlug="northstar"
+          merchantName="Northstar Travel Coffee"
+          threadId="thread-paid"
+          onBound={() => undefined}
+          onHistory={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Order confirmed' })).toBeVisible();
+    expect(screen.getByText('Paid')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'View receipt' })).toHaveAttribute(
+      'href',
+      '/orders/83000000-0000-4000-8000-000000000007',
+    );
+    expect(screen.getByRole('link', { name: 'Start a new order' })).toHaveAttribute(
+      'href',
+      '/buyer/northstar',
+    );
+  });
+
+  it('drops Pay once the live conversation reports the quote SETTLED', async () => {
+    const quote = {
+      id: 'q-live',
+      totalDisplay: '₹899.00',
+      deliveryBy: '2026-10-18',
+      merchant: 'Northstar Travel Coffee',
+      discountMinor: '0',
+      lines: [{ sku: 'mill.cast-iron', title: 'Cast iron mill', quantity: 1 }],
+    };
+    upsertThread(
+      { userId: 'user-buyer', shopId: 'northstar-demo-in' },
+      {
+        id: 'thread-live-paid',
+        conversationId: '82000000-0000-4000-8000-000000000042',
+        title: 'mill',
+        updatedAt: new Date().toISOString(),
+        messages: [
+          { role: 'you', text: 'Buy now' },
+          { role: 'concierge', text: 'Locked total ₹899.00.' },
+        ],
+        quote,
+      },
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/conversations/82000000-0000-4000-8000-000000000042')) {
+          return new Response(
+            JSON.stringify({
+              quote: {
+                ...quote,
+                status: 'SETTLED',
+                boundCheckoutId: '83000000-0000-4000-8000-000000000042',
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <NorthstarDemo
+          userId="user-buyer"
+          email="buyer@example.com"
+          tenantId="northstar-demo-in"
+          shopSlug="northstar"
+          merchantName="Northstar Travel Coffee"
+          threadId="thread-live-paid"
+          onBound={() => undefined}
+          onHistory={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('link', { name: 'View receipt' })).toHaveAttribute(
+      'href',
+      '/orders/83000000-0000-4000-8000-000000000042',
+    );
+    expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
+    expect(
+      getThread({ userId: 'user-buyer', shopId: 'northstar-demo-in' }, 'thread-live-paid')?.quote
+        ?.status,
+    ).toBe('SETTLED');
+  });
+
+  it('opens Razorpay when a typed pay turn comes back with a prepared checkout', async () => {
+    const user = userEvent.setup();
+    const quote = {
+      id: 'q-typed',
+      totalDisplay: '₹899.00',
+      deliveryBy: '2026-10-18',
+      merchant: 'Northstar Travel Coffee',
+      discountMinor: '0',
+      lines: [{ sku: 'mill.cast-iron', title: 'Cast iron mill', quantity: 1 }],
+    };
+    upsertThread(
+      { userId: 'user-buyer', shopId: 'northstar-demo-in' },
+      {
+        id: 'thread-typed-pay',
+        conversationId: null,
+        title: 'mill',
+        updatedAt: new Date().toISOString(),
+        messages: [
+          { role: 'you', text: 'Buy now' },
+          { role: 'concierge', text: 'Locked total ₹899.00.' },
+        ],
+        quote,
+      },
+    );
+    const razorpayOpen = vi.fn();
+    const razorpayOptions: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'Razorpay',
+      class {
+        constructor(options: Record<string, unknown>) {
+          razorpayOptions.push(options);
+        }
+        open = razorpayOpen;
+      },
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/turns')) {
+          return new Response(
+            JSON.stringify({
+              reply: 'Checkout is ready on the same frozen quote.',
+              quote: { ...quote, status: 'BOUND' },
+              checkout: {
+                checkoutId: '84000000-0000-4000-8000-000000000001',
+                keyId: 'rzp_test_demo',
+                orderId: 'order_typed',
+                amount: 89900,
+                currency: 'INR',
+                name: 'Northstar Travel Coffee',
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        if (url.endsWith('/v1/conversations')) {
+          return new Response(JSON.stringify({ id: '82000000-0000-4000-8000-000000000043' }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <NorthstarDemo
+          userId="user-buyer"
+          email="buyer@example.com"
+          tenantId="northstar-demo-in"
+          shopSlug="northstar"
+          merchantName="Northstar Travel Coffee"
+          threadId="thread-typed-pay"
+          onBound={() => undefined}
+          onHistory={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByLabelText('Message to Concierge'), 'pay{Enter}');
+    await waitFor(() => expect(razorpayOpen).toHaveBeenCalledTimes(1));
+    expect(razorpayOptions[0]).toMatchObject({
+      order_id: 'order_typed',
+      amount: 89900,
+      prefill: { email: 'buyer@example.com' },
+    });
+  });
+
   it('restores in-cart quantity controls from the live conversation cart', async () => {
     upsertThread(
       { userId: 'user-buyer', shopId: 'northstar-demo-in' },
@@ -983,6 +1287,7 @@ describe('talk voice surface', () => {
 
     const talk = await screen.findByRole('button', { name: 'Talk' });
     expect(talk.closest('.composer-box')).toBeTruthy();
+    await waitFor(() => expect(talk).toBeEnabled());
     await user.click(talk);
     await waitFor(() =>
       expect(document.querySelector('.transcript .process-orb-voice')).toBeTruthy(),
@@ -1027,7 +1332,70 @@ describe('talk voice surface', () => {
     expect(await screen.findByRole('button', { name: 'Talk' })).toBeVisible();
   });
 
-  it('shows VAPI_NOT_READY when voice config is incomplete', async () => {
+  it('keeps the first Talk tap on a brand-new chat when the chat id binds mid-start', async () => {
+    const user = userEvent.setup();
+    setAccessTokenProvider(async () => 'buyer-access-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/concierge/config')) {
+          return new Response(
+            JSON.stringify({
+              voiceEnabled: true,
+              vapiPublicKey: 'vapi_public_test',
+              voiceModelBase: 'https://charter.example/api/v1/voice',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        if (url.includes('/v1/conversations')) {
+          return new Response(JSON.stringify({ id: '82000000-0000-4000-8000-000000000002' }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+    const bound: string[] = [];
+
+    function NewChat() {
+      const [threadId, setThreadId] = useState<string | null>(null);
+      return (
+        <NorthstarDemo
+          userId="user-buyer"
+          email="buyer@example.com"
+          tenantId="northstar-demo-in"
+          shopSlug="northstar"
+          merchantName="Northstar Travel Coffee"
+          threadId={threadId}
+          onBound={(id) => {
+            bound.push(id);
+            setThreadId(id);
+          }}
+          onHistory={() => undefined}
+        />
+      );
+    }
+
+    render(
+      <MemoryRouter>
+        <NewChat />
+      </MemoryRouter>,
+    );
+
+    const talk = await screen.findByRole('button', { name: 'Talk' });
+    await waitFor(() => expect(talk).toBeEnabled());
+    await user.click(talk);
+    await waitFor(() => expect(vapiStart).toHaveBeenCalledTimes(1));
+    expect(bound).toHaveLength(1);
+    emitVapi('call-start');
+    expect(await screen.findByRole('button', { name: 'Stop' })).toBeVisible();
+    expect(vapiStop).not.toHaveBeenCalled();
+  });
+
+  it('explains missing voice config in buyer words and leaves the chat usable', async () => {
     const user = userEvent.setup();
     setAccessTokenProvider(async () => 'buyer-access-token');
     vi.stubGlobal(
@@ -1069,8 +1437,16 @@ describe('talk voice surface', () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole('button', { name: 'Talk' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('VOICE_PUBLIC_URL_MISSING');
+    const talk = await screen.findByRole('button', { name: 'Talk' });
+    await waitFor(() => expect(talk).toBeEnabled());
+    await user.click(talk);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Voice isn’t set up on this deployment yet. Type your message instead.',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('VOICE_PUBLIC_URL_MISSING');
     expect(vapiStart).not.toHaveBeenCalled();
+    // No stuck busy orb after a voice error, and the blank-chat starters stay clickable.
+    expect(document.querySelector('.process-orb-voice')).toBeNull();
+    expect(screen.getByRole('button', { name: 'What do you sell?' })).toBeEnabled();
   });
 });

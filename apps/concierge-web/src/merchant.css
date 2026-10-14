@@ -502,6 +502,66 @@
   grid-column: 1 / -1;
 }
 
+/* A label plus a hint below it, kept as one grid cell so the hint is not part of the label name. */
+.merchant-field {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.field-hint[data-tone='warning'] {
+  color: #805115;
+  font-weight: 650;
+}
+
+.merchant-draft-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem clamp(1rem, 3vw, 1.75rem);
+  border-bottom: 1px solid rgba(128, 81, 21, 0.35);
+  background: rgba(255, 214, 140, 0.42);
+  color: var(--ink);
+}
+
+.merchant-draft-banner p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.merchant-draft-banner strong {
+  color: #805115;
+}
+
+.merchant-draft-banner .merchant-form-notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.merchant-draft-banner button,
+.merchant-draft-banner .link-btn {
+  min-height: 2.5rem;
+  border-radius: 0;
+}
+
+.settings-share p {
+  max-width: 60ch;
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+}
+
 .record-form-actions {
   justify-content: flex-end;
   margin-top: 1rem;

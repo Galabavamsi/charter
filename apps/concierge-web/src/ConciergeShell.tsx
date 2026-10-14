@@ -272,6 +272,7 @@ function UnboundWorkspace({
             <textarea
               id="buyer-composer"
               aria-label="Message to Concierge"
+              maxLength={1000}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -457,6 +458,7 @@ export function ConciergeShell({
               navigate(`/buyer/${boundShop.merchant.slug}/chat/${id}`, { replace: true })
             }
             onHistory={() => setRevision((value) => value + 1)}
+            refreshAccessToken={async () => (await auth.refreshSession())?.accessToken ?? null}
           />
         ) : (
           <UnboundWorkspace

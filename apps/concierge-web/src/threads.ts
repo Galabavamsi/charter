@@ -13,6 +13,9 @@ export type StoredQuote = {
   merchant: string;
   discountMinor: string;
   lines: Array<{ sku: string; title: string; quantity: number }>;
+  /** Server quote state; SETTLED means paid, so Pay must not come back on reload. */
+  status?: 'FROZEN' | 'BOUND' | 'SETTLED';
+  boundCheckoutId?: string | null;
 };
 
 export type StoredCart = {
@@ -71,18 +74,14 @@ function newer<T extends ChatThread>(left: T, right: T): T {
   return right.updatedAt >= left.updatedAt ? right : left;
 }
 
+/** De-dupe by id only: two chats that open with the same message are still two chats. */
 export function dedupeThreads<T extends ChatThread>(threads: T[]): T[] {
   const byId = new Map<string, T>();
   for (const thread of threads) {
     const existing = byId.get(thread.id);
     byId.set(thread.id, existing ? newer(existing, thread) : thread);
   }
-  const byTitle = new Map<string, T>();
-  for (const thread of byId.values()) {
-    const existing = byTitle.get(thread.title);
-    byTitle.set(thread.title, existing ? newer(existing, thread) : thread);
-  }
-  return [...byTitle.values()];
+  return [...byId.values()];
 }
 
 function writeAll(scope: ThreadScope, threads: ChatThread[]): void {
@@ -186,13 +185,7 @@ export function listAllUserThreads(
     const existing = byShopId.get(key);
     byShopId.set(key, existing ? newer(existing, row) : row);
   }
-  const byShopTitle = new Map<string, ListedThread>();
-  for (const row of byShopId.values()) {
-    const key = `${row.shopId}:${row.title}`;
-    const existing = byShopTitle.get(key);
-    byShopTitle.set(key, existing ? newer(existing, row) : row);
-  }
-  return [...byShopTitle.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...byShopId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export function titleFrom(text: string): string {

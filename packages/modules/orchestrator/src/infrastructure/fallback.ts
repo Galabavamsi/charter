@@ -1,6 +1,8 @@
 import type { ChatMessage } from '../domain/index.js';
 import { isPayIntent } from '../application/turn.js';
-import type { FireworksClient } from './fireworks.js';
+import { normalizeToolName } from '../application/execute.js';
+import { summarizeToolResult, toolResultFailed } from '../application/summary.js';
+import type { FireworksClient, ModelTurnContext } from './fireworks.js';
 
 const BUY_INTENT = /\b(buy|add|order|get|want|need)\b/i;
 const BUY_NOW = /\bbuy now\b/i;
@@ -13,25 +15,34 @@ const BROWSE_MORE = /\b(more products|view more|show more|what else|browse)\b/i;
 const CONFIRM_CART = /^put these in my cart/i;
 
 /** Machine checkout turns. Do not wait on the live model. */
-export function usesStructuredCheckout(text: string): boolean {
+export function usesStructuredCheckout(text: string, hasQuote = false): boolean {
   const trimmed = text.trim();
-  return CONFIRM_CART.test(trimmed) || BUY_NOW.test(trimmed) || isPayIntent(trimmed);
+  return CONFIRM_CART.test(trimmed) || BUY_NOW.test(trimmed) || isPayIntent(trimmed, hasQuote);
+}
+
+function lastUserIndex(messages: ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function lastUserText(messages: ChatMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === 'user') {
-      return message.content;
-    }
-  }
-  return '';
+  const message = messages[lastUserIndex(messages)];
+  return message?.role === 'user' ? message.content : '';
+}
+
+/** This turn only: what happened after the shopper's latest message. */
+function currentTurn(messages: ChatMessage[]): ChatMessage[] {
+  return messages.slice(lastUserIndex(messages) + 1);
 }
 
 function completedTools(messages: ChatMessage[]): string[] {
   return messages.flatMap((message) =>
     message.role === 'assistant'
-      ? (message.tool_calls ?? []).map((call) => call.function.name)
+      ? (message.tool_calls ?? []).map((call) => normalizeToolName(call.function.name))
       : [],
   );
 }
@@ -48,7 +59,15 @@ function lastTool(messages: ChatMessage[]): { name: string; content: string } | 
     assistant && assistant.role === 'assistant'
       ? assistant.tool_calls?.[assistant.tool_calls.length - 1]?.function.name
       : undefined;
-  return name ? { name, content: tool.content } : undefined;
+  return name ? { name: normalizeToolName(name), content: tool.content } : undefined;
+}
+
+function parseResult(content: string): unknown {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function quantityIntent(text: string): { quantity: number } | null {
@@ -66,21 +85,18 @@ function quantityIntent(text: string): { quantity: number } | null {
   return null;
 }
 
+/** Most recent cart line in any earlier tool result ("remove it from the cart"). */
 function lastCartSku(messages: ChatMessage[]): string {
-  const tool = lastTool(messages);
-  if (!tool) {
-    return '';
-  }
-  try {
-    const result = JSON.parse(tool.content) as {
-      cart?: { lines?: Array<{ sku?: string }> };
-    };
-    const line = result.cart?.lines?.at(-1);
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'tool') {
+      continue;
+    }
+    const result = parseResult(message.content) as
+      { cart?: { lines?: Array<{ sku?: string }> } | null } | undefined;
+    const line = result?.cart?.lines?.at(-1);
     if (line?.sku) {
       return line.sku;
     }
-  } catch {
-    /* use empty */
   }
   return '';
 }
@@ -88,24 +104,19 @@ function lastCartSku(messages: ChatMessage[]): string {
 function productQuery(text: string, messages: ChatMessage[]): string {
   const tool = lastTool(messages);
   if (tool?.name === 'catalog.search') {
-    try {
-      const result = JSON.parse(tool.content) as {
-        items?: Array<{ sku?: string; title?: string }>;
-      };
-      const lower = text.toLowerCase();
-      const hit = (result.items ?? []).find(
-        (item) =>
-          (item.title && lower.includes(item.title.toLowerCase())) ||
-          (item.sku && lower.includes(item.sku.toLowerCase())),
-      );
-      if (hit?.sku) {
-        return hit.sku;
-      }
-      if (hit?.title) {
-        return hit.title;
-      }
-    } catch {
-      /* use stripped text */
+    const result = parseResult(tool.content) as
+      { items?: Array<{ sku?: string; title?: string }> } | undefined;
+    const lower = text.toLowerCase();
+    const hit = (result?.items ?? []).find(
+      (item) =>
+        (item.title && lower.includes(item.title.toLowerCase())) ||
+        (item.sku && lower.includes(item.sku.toLowerCase())),
+    );
+    if (hit?.sku) {
+      return hit.sku;
+    }
+    if (hit?.title) {
+      return hit.title;
     }
   }
   const stripped = text
@@ -113,6 +124,9 @@ function productQuery(text: string, messages: ChatMessage[]): string {
       /\b(i'd like to|i would like to|please|can i|buy|add|order|get|want|need|set|change|remove|from(?: the)? cart|quantity|to)\b/gi,
       ' ',
     )
+    // Articles and pronouns: "I want a grinder" should search "grinder", not "I a grinder".
+    .replace(/\b(i|a|an|the|some|me|my|one|it)\b/gi, ' ')
+    .replace(/[.!?,]+/g, ' ')
     .replace(/\b\d+\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -133,9 +147,20 @@ function parseConfirmLines(text: string): Array<{ sku: string; quantity: number 
 
 function inferNextTool(
   text: string,
-  names: string[],
   messages: ChatMessage[],
+  context: ModelTurnContext,
 ): { name: string; args: Record<string, unknown> } | null {
+  const turn = currentTurn(messages);
+  const names = completedTools(turn);
+  const latest = lastTool(turn);
+  // A denied add, an unknown sku, or a locked cart ends the turn here: never
+  // lock (or pay for) a cart that does not hold what the shopper asked for.
+  if (latest && toolResultFailed(parseResult(latest.content))) {
+    return null;
+  }
+  const pay = isPayIntent(text, context.hadQuote);
+  // Paying on a total that was already locked goes straight to checkout.
+  const payOnLockedTotal = pay && context.hadQuote;
   if (CONFIRM_CART.test(text)) {
     if (!names.includes('cart.set_quantities')) {
       return { name: 'cart.set_quantities', args: { lines: parseConfirmLines(text) } };
@@ -143,18 +168,18 @@ function inferNextTool(
     if (/\bthen lock this total\b|\bbuy now\b/i.test(text) && !names.includes('checkout.quote')) {
       return { name: 'checkout.quote', args: {} };
     }
-    if (isPayIntent(text) && !names.includes('checkout.prepare')) {
+    if (pay && !names.includes('checkout.prepare')) {
       return { name: 'checkout.prepare', args: {} };
     }
     return null;
   }
-  if (BROWSE_MORE.test(text) && lastTool(messages)?.name !== 'catalog.search') {
+  if (BROWSE_MORE.test(text) && latest?.name !== 'catalog.search') {
     return { name: 'catalog.search', args: { query: '' } };
   }
   const quantity = quantityIntent(text);
   const buy = BUY_INTENT.test(text) && !quantity && !BROWSE_MORE.test(text) && !BUY_NOW.test(text);
-  const quote = QUOTE_INTENT.test(text) || buy || BUY_NOW.test(text);
-  const pay = isPayIntent(text);
+  // Plain add/want/need only adds; the total locks on Buy now or an explicit ask.
+  const quote = (QUOTE_INTENT.test(text) || BUY_NOW.test(text)) && !payOnLockedTotal;
   if (quantity && !names.includes('cart.set_quantity')) {
     return {
       name: 'cart.set_quantity',
@@ -164,73 +189,24 @@ function inferNextTool(
   if (quantity) {
     return null;
   }
-  if (!names.includes('catalog.search') && !BUY_NOW.test(text) && !QUOTE_INTENT.test(text)) {
+  if (
+    !names.includes('catalog.search') &&
+    !pay &&
+    !BUY_NOW.test(text) &&
+    !QUOTE_INTENT.test(text)
+  ) {
     return { name: 'catalog.search', args: { query: text } };
   }
   if (buy && !names.includes('cart.add_line')) {
     return { name: 'cart.add_line', args: { sku: productQuery(text, messages) } };
   }
-  if ((quote || pay) && !names.includes('checkout.quote')) {
+  if ((quote || (pay && !payOnLockedTotal)) && !names.includes('checkout.quote')) {
     return { name: 'checkout.quote', args: {} };
   }
   if (pay && !names.includes('checkout.prepare')) {
     return { name: 'checkout.prepare', args: {} };
   }
   return null;
-}
-
-function summarizeTool(name: string, content: string): string {
-  try {
-    const result = JSON.parse(content) as {
-      error?: string;
-      items?: Array<{ title?: string }>;
-      decision?: { outcome?: string; message?: string };
-      quote?: { totalDisplay?: string };
-      checkout?: unknown;
-    };
-    if (result.error) {
-      return `I could not complete that. ${result.error}`;
-    }
-    if (name === 'catalog.search' && Array.isArray(result.items)) {
-      const titles = result.items
-        .map((item) => item.title)
-        .filter((title): title is string => Boolean(title))
-        .slice(0, 6);
-      return titles.length > 0
-        ? `Available items:\n${titles.map((title) => `- ${title}`).join('\n')}`
-        : 'The catalog has no matching items.';
-    }
-    if (name === 'cart.add_line') {
-      if (result.decision?.outcome === 'deny' || result.decision?.outcome === 'require_approval') {
-        return result.decision.message ?? 'That item is not in the allowed cart.';
-      }
-      return 'Added to your cart. Change quantity on the card if you need to, then Buy now.';
-    }
-    if (name === 'cart.set_quantity' || name === 'cart.set_quantities') {
-      if (result.decision?.outcome === 'deny' || result.decision?.outcome === 'require_approval') {
-        return result.decision.message ?? 'That quantity is not in the allowed cart.';
-      }
-      const total =
-        result && typeof result === 'object' && 'cart' in result
-          ? (result as { cart?: { totals?: { totalDisplay?: string }; lines?: unknown[] } }).cart
-          : undefined;
-      if (total && Array.isArray(total.lines) && total.lines.length === 0) {
-        return 'Removed from your cart.';
-      }
-      return total?.totals?.totalDisplay
-        ? `Quantity updated. Cart total: ${total.totals.totalDisplay}. Change quantity on the card, then Buy now.`
-        : 'Quantity updated. Change quantity on the card, then Buy now.';
-    }
-    if (name === 'checkout.quote' && result.quote?.totalDisplay) {
-      return `Locked total ${result.quote.totalDisplay}. Review the amount, then pay.`;
-    }
-    if (name === 'checkout.prepare' && result.checkout) {
-      return 'Checkout is ready on the same frozen quote.';
-    }
-  } catch {
-    return 'Ready when you are.';
-  }
-  return 'Ready when you are.';
 }
 
 function toolCall(name: string, args: Record<string, unknown>): ChatMessage {
@@ -249,15 +225,18 @@ function toolCall(name: string, args: Record<string, unknown>): ChatMessage {
 
 export function createStructuredFallbackClient(): FireworksClient {
   return {
-    async complete(messages) {
+    async complete(messages, context = { hadQuote: false }) {
       const text = lastUserText(messages);
-      const next = inferNextTool(text, completedTools(messages), messages);
+      const next = inferNextTool(text, messages, context);
       if (next) {
         return toolCall(next.name, next.args);
       }
-      const tool = lastTool(messages);
+      const tool = lastTool(currentTurn(messages));
       if (tool) {
-        return { role: 'assistant', content: summarizeTool(tool.name, tool.content) };
+        return {
+          role: 'assistant',
+          content: summarizeToolResult(tool.name, parseResult(tool.content)),
+        };
       }
       return {
         role: 'assistant',
@@ -268,17 +247,33 @@ export function createStructuredFallbackClient(): FireworksClient {
   };
 }
 
-export function createResilientModelClient(live: FireworksClient | null): FireworksClient {
+function logModelFallback(error: unknown): void {
+  console.warn(
+    JSON.stringify({
+      level: 'warn',
+      msg: 'llm_fallback',
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
+}
+
+export function createResilientModelClient(
+  live: FireworksClient | null,
+  onFallback: (error: unknown) => void = logModelFallback,
+): FireworksClient {
   const fallback = createStructuredFallbackClient();
   if (!live) {
     return fallback;
   }
   return {
-    async complete(messages) {
+    async complete(messages, context) {
       try {
-        return await live.complete(messages);
-      } catch {
-        return fallback.complete(messages);
+        return await live.complete(messages, context);
+      } catch (error) {
+        // The scripted client keeps checkout working, but a silent switch hides a
+        // retired model or a bad key, so always leave a trace.
+        onFallback(error);
+        return fallback.complete(messages, context);
       }
     },
   };
