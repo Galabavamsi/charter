@@ -209,7 +209,10 @@ describe('voice turn text and speech', () => {
       speakable(
         'Available items:\n- **Hand grinder**\n- [Paper filters](https://x.invalid)\nLocked total ₹2,347.00',
       ),
-    ).toBe('Available items: Hand grinder. Paper filters. Locked total rupees 2,347');
+    ).toBe('Available items: Hand grinder. Paper filters. Locked total 2347 rupees');
+    expect(speakable('Hand grinder Rs. 999, steel, 8 in stock. Pro ₹1,499.50.')).toBe(
+      'Hand grinder 999 rupees, steel, 8 available. Pro 1499 rupees 50 paise.',
+    );
     expect(speakable('Voice cart loaded.')).toBe('Voice cart loaded.');
   });
 });

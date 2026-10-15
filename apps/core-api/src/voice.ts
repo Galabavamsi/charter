@@ -150,8 +150,16 @@ export function speakable(text: string): string {
   const lines = text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[*`]+/g, '')
-    .replace(/₹\s?([\d,]+)\.00\b/g, 'rupees $1')
+    // "₹1,499.00" / "Rs. 999" -> "1499 rupees": TTS number formatters split grouped digits
+    // ("Rs. 9 99") and misread Indian grouping (1,00,000).
+    .replace(
+      /(?:₹|\bRs\.?|\bINR)\s?(\d(?:[\d,]*\d)?)(?:\.(\d{2}))?/gi,
+      (_match, rupees: string, paise?: string) =>
+        `${rupees.replace(/,/g, '')} rupees${paise && paise !== '00' ? ` ${Number(paise)} paise` : ''}`,
+    )
     .replace(/₹\s?/g, 'rupees ')
+    // "8 in stock" is read as "8 inches stock".
+    .replace(/\b(\d+) in stock\b/gi, '$1 available')
     .split(/\n+/)
     .map((line) =>
       line

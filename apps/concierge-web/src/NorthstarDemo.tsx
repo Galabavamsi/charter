@@ -1266,12 +1266,14 @@ export function NorthstarDemo({
       applyVoiceTranscript(message);
     });
     vapi.on('error', (error: unknown) => {
+      console.warn('[charter] voice error', error);
       if (generation !== talkGeneration.current) {
         return;
       }
       stopTalkSession(voiceErrorCopy(error), 'error');
     });
     vapi.on('call-start-failed', (event: unknown) => {
+      console.warn('[charter] voice error', event);
       if (generation !== talkGeneration.current) {
         return;
       }

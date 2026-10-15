@@ -67,6 +67,15 @@ describe('talk voice UI state', () => {
         ],
       }),
     ).toMatch(/customer/);
+    expect(
+      voiceErrorCopy({
+        type: 'start-method-error',
+        error: { status: 403, error: { message: "Key doesn't allow transient assistant." } },
+      }),
+    ).toMatch(/Vapi key settings/);
+    expect(voiceErrorCopy({ error: { error: { message: 'Something else broke' } } })).toBe(
+      'Something else broke',
+    );
   });
 });
 
@@ -395,8 +404,8 @@ describe('talk assistant session config', () => {
       provider: 'vapi',
       voiceId: 'Naina',
       version: 2,
-      fallbackPlan: { voices: [{ provider: 'vapi', voiceId: 'Elliot' }] },
     });
+    expect(assistant.voice).not.toHaveProperty('fallbackPlan');
     expect(JSON.stringify(assistant.model)).not.toContain('stream:true');
   });
 });
