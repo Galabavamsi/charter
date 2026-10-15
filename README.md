@@ -236,7 +236,7 @@ One container (Fastify API + webhooks + MCP + built SPA) on a Lightsail containe
 
 Every push to `main` that passes `check` deploys itself: `ci.yml` calls [`deploy.yml`](.github/workflows/deploy.yml), which
 
-1. assumes `charter-github-deploy` through GitHub OIDC (no AWS keys in GitHub; the role trusts only `refs/heads/main` of this repo, see [`infra/aws`](infra/aws)),
+1. assumes `charter-github-deploy` through GitHub OIDC, so there are no AWS keys in GitHub. The role trusts only `main` of this repo, matched by owner and repo ID because the repo issues GitHub's immutable OIDC subject (`repo:Galabavamsi@51828882/charter@1357546121:ref:refs/heads/main`; see [`infra/aws`](infra/aws)),
 2. skips if `main` has already moved on, so a commit whose CI finished late never replaces a newer one,
 3. reads the live Lightsail deployment, masks its secrets in the job log, and takes the public `SUPABASE_URL` and `sb_publishable_` key from it as the Vite build args,
 4. builds `linux/amd64` and pushes `charter:<short-sha>` to ECR,
