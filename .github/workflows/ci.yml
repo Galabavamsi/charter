@@ -46,3 +46,11 @@ jobs:
       - run: pnpm smoke:built
       - run: pnpm lint
       - run: pnpm format:check
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml

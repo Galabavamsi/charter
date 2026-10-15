@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLogin",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPushCharter",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "arn:aws:ecr:ap-south-1:301745146083:repository/charter"
+    },
+    {
+      "Sid": "LightsailDeployCharter",
+      "Effect": "Allow",
+      "Action": "lightsail:CreateContainerServiceDeployment",
+      "Resource": "arn:aws:lightsail:ap-south-1:301745146083:ContainerService/935051af-9bcc-4298-9699-4c77b2100eba"
+    },
+    {
+      "Sid": "LightsailReadContainerServices",
+      "Effect": "Allow",
+      "Action": ["lightsail:GetContainerServices", "lightsail:GetContainerServiceDeployments"],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "aws:RequestedRegion": "ap-south-1" }
+      }
+    }
+  ]
+}

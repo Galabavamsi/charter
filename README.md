@@ -234,6 +234,27 @@ Root gates: `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm format:check`, `pn
 
 One container (Fastify API + webhooks + MCP + built SPA) on a Lightsail container service in `ap-south-1`, pulling from ECR. Postgres and Auth stay on Supabase; the runtime connects as `charter_app` through the Supavisor transaction pooler (`:6543`, `sslmode=no-verify`).
 
+Every push to `main` that passes `check` deploys itself: `ci.yml` calls [`deploy.yml`](.github/workflows/deploy.yml), which
+
+1. assumes `charter-github-deploy` through GitHub OIDC (no AWS keys in GitHub; the role trusts only `refs/heads/main` of this repo, see [`infra/aws`](infra/aws)),
+2. skips if `main` has already moved on, so a commit whose CI finished late never replaces a newer one,
+3. reads the live Lightsail deployment, masks its secrets in the job log, and takes the public `SUPABASE_URL` and `sb_publishable_` key from it as the Vite build args,
+4. builds `linux/amd64` and pushes `charter:<short-sha>` to ECR,
+5. creates a Lightsail deployment that copies the live one with only the image swapped, and waits for `ACTIVE` (a deployment that fails health checks never takes traffic; the previous version keeps serving),
+6. smoke-tests `https://charter.humanslop.in`: `/health` must report `ok` and `db`, and MCP `initialize` must answer.
+
+The runtime environment lives only in the Lightsail deployment. To change a variable, modify the deployment in the Lightsail console; later pushes carry the new value forward. To redeploy without a push, run **Actions › deploy › Run workflow** on `main`. To roll back, redeploy an earlier version from the service's deployment history in the Lightsail console.
+
+One-time AWS setup, with admin credentials:
+
+```bash
+aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com
+aws iam create-role --role-name charter-github-deploy --assume-role-policy-document file://infra/aws/github-deploy-trust.json
+aws iam put-role-policy --role-name charter-github-deploy --policy-name charter-deploy --policy-document file://infra/aws/github-deploy-policy.json
+```
+
+A manual build needs the same build args:
+
 ```bash
 docker build --platform linux/amd64   --build-arg VITE_SUPABASE_URL=https://<ref>.supabase.co   --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_... -t charter .
 ```
