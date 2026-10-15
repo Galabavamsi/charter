@@ -19,21 +19,16 @@ env:
   PUBLIC_URL: https://charter.humanslop.in
 
 jobs:
-  deploy:
+  # Runs before the deploy job joins the queue below, so a commit whose CI finished after a newer
+  # commit was pushed never enters it and can never displace that newer commit's queued deploy.
+  tip:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # One deploy at a time. A newer queued run replaces an older queued one.
-    concurrency:
-      group: charter-lightsail
-      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      latest: ${{ steps.tip.outputs.latest }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      # Deploys are serialized, so checking here keeps an older commit whose CI finished late
-      # from replacing a newer one that is already live.
       - name: Check this commit is still the tip of main
         id: tip
         env:
@@ -46,8 +41,22 @@ jobs:
             echo "::notice::main is at ${tip::7}; its own run deploys it, so ${GITHUB_SHA::7} is skipped"
           fi
 
-      - uses: aws-actions/configure-aws-credentials@v6
-        if: steps.tip.outputs.latest == 'true'
+  deploy:
+    needs: tip
+    if: needs.tip.outputs.latest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # One deploy at a time. A newer queued run replaces an older queued one.
+    concurrency:
+      group: charter-lightsail
+      cancel-in-progress: false
+    # Third-party actions are pinned to commits because this job holds production AWS credentials.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: charter-deploy-${{ github.run_id }}
@@ -57,27 +66,22 @@ jobs:
       # publishable key that Vite bakes into the SPA. Nothing about the environment lives in GitHub.
       - name: Read the live deployment
         id: live
-        if: steps.tip.outputs.latest == 'true'
         run: node .github/scripts/lightsail-deploy.mjs prepare
 
       - name: Log in to ECR
         id: ecr
-        if: steps.tip.outputs.latest == 'true'
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
-      - uses: docker/setup-buildx-action@v4
-        if: steps.tip.outputs.latest == 'true'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Pick the image tag
         id: image
-        if: steps.tip.outputs.latest == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: echo "ref=${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push the linux/amd64 image
-        if: steps.tip.outputs.latest == 'true'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64
@@ -95,11 +99,9 @@ jobs:
       # Copies the live deployment, swaps the image, waits for ACTIVE. A deployment that fails its
       # health checks never takes traffic: Lightsail keeps the previous version serving.
       - name: Deploy to Lightsail
-        if: steps.tip.outputs.latest == 'true'
         env:
           IMAGE: ${{ steps.image.outputs.ref }}
         run: node .github/scripts/lightsail-deploy.mjs deploy "$IMAGE"
 
       - name: Smoke test the live site
-        if: steps.tip.outputs.latest == 'true'
         run: node .github/scripts/lightsail-deploy.mjs smoke "$PUBLIC_URL"
