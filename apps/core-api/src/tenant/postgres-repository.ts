@@ -67,8 +67,15 @@ function slugify(value: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'shop'
+      .slice(0, 48)
+      .replace(/-+$/, '') || 'shop'
   );
+}
+
+// Truncating can land on a hyphen; a trailing one would make `${prefix}-${suffix}`
+// contain '--' and fail the slug check constraint.
+function slugPrefix(value: string, length: number): string {
+  return slugify(value).slice(0, length).replace(/-+$/, '') || 'item';
 }
 
 function formatMinor(value: bigint): string {
@@ -1023,6 +1030,27 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
       throw new Error('SHOP_MEMBERSHIP_REQUIRED');
     }
     return role;
+  }
+
+  // Checked before writing because a unique violation would abort the transaction
+  // and surface as an opaque 500 instead of a 409 the merchant can act on.
+  async function assertSkuAvailable(
+    executor: Executor,
+    tenantId: string,
+    sku: string,
+    exceptVariantId: string | null,
+  ): Promise<void> {
+    const existing = await sql<{ id: string }>`
+      select variant.id
+      from catalog.variants variant
+      where variant.tenant_id = ${tenantId}
+        and variant.sku = ${sku}
+        and (${exceptVariantId}::uuid is null or variant.id <> ${exceptVariantId}::uuid)
+      limit 1
+    `.execute(executor);
+    if (existing.rows[0]) {
+      throw new Error('CATALOG_SKU_CONFLICT');
+    }
   }
 
   async function readCatalog(
@@ -2157,9 +2185,12 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
       address_line: string;
       refund_policy: string;
       profile_verified: boolean;
+      status: MerchantSettingsSnapshot['status'];
+      published_at: Date | null;
     }>`
       select shop.name, shop.blurb, shop.slug, shop.synthetic, shop.version,
-             shop.gstin, shop.address_line, shop.refund_policy, shop.profile_verified
+             shop.gstin, shop.address_line, shop.refund_policy, shop.profile_verified,
+             shop.status, shop.published_at
       from catalog.shops shop
       where shop.tenant_id = ${tenantId}
         and shop.status <> 'archived'
@@ -2185,6 +2216,8 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
       blurb: shop.blurb,
       slug: shop.slug,
       publicPath: `/shops/${shop.slug}`,
+      status: shop.status,
+      publishedAt: shop.published_at?.toISOString() ?? null,
       synthetic: shop.synthetic,
       testMode,
       paymentAccountDisclosure: testMode
@@ -2472,6 +2505,7 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
               ) {
                 throw new Error('CATALOG_PUBLISH_INVALID');
               }
+              await assertSkuAvailable(trx, input.tenantId, sku, null);
               let categoryId: string | null = null;
               if (categoryTitle) {
                 const categorySlug = slugify(categoryTitle);
@@ -2501,7 +2535,7 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
               }
               const productId = randomUUID();
               const variantId = randomUUID();
-              const productSlug = `${slugify(title).slice(0, 38)}-${randomUUID().slice(0, 8)}`;
+              const productSlug = `${slugPrefix(title, 38)}-${randomUUID().slice(0, 8)}`;
               const published = input.status === 'published';
               await sql`
               insert into catalog.products (
@@ -2610,6 +2644,8 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
               const categoryTitle = input.category.trim();
               const sku = input.sku.trim();
               const priceMinor = BigInt(input.priceMinor);
+              // Stock is only required on the draft -> published transition, so a
+              // sold-out listing can still have its copy or price corrected.
               if (
                 input.status === 'published' &&
                 (title.length < 2 ||
@@ -2617,10 +2653,11 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
                   !categoryTitle ||
                   !sku ||
                   priceMinor <= 0n ||
-                  before.inventory.available <= 0)
+                  (before.status !== 'published' && before.inventory.available <= 0))
               ) {
                 throw new Error('CATALOG_PUBLISH_INVALID');
               }
+              await assertSkuAvailable(trx, input.tenantId, sku, before.variantId);
               let categoryId: string | null = null;
               if (categoryTitle) {
                 const categorySlug = slugify(categoryTitle);
@@ -3462,6 +3499,102 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
         },
       );
     },
+    async publishMerchantShop(input) {
+      return withAuthContext(
+        db,
+        { userId: input.userId, tenantId: input.tenantId },
+        async (trx) => {
+          const role = await requireMembership(trx, input.userId, input.tenantId, [
+            'owner',
+            'admin',
+          ]);
+          return runMerchantCommand(
+            trx,
+            {
+              userId: input.userId,
+              tenantId: input.tenantId,
+              operation: `shop:publish:${input.tenantId}`,
+              idempotencyKey: input.idempotencyKey,
+              requestHash: input.requestHash,
+            },
+            async () => {
+              const before = await readMerchantSettings(trx, input.tenantId, input.testMode, role);
+              if (!before) {
+                throw new Error('TENANT_UNKNOWN');
+              }
+              if (before.version !== input.expectedVersion) {
+                throw new Error('SETTINGS_VERSION_CONFLICT');
+              }
+              const target = input.published ? 'published' : 'draft';
+              if (before.status === target) {
+                return before;
+              }
+              if (before.status === 'suspended') {
+                throw new Error('SHOP_PUBLISH_INVALID');
+              }
+              if (input.published) {
+                const sellable = await sql<{ count: number }>`
+                select count(*)::integer as count
+                from catalog.variants variant
+                join catalog.products product
+                  on product.tenant_id = variant.tenant_id
+                 and product.id = variant.product_id
+                join catalog.inventory inventory
+                  on inventory.tenant_id = variant.tenant_id
+                 and inventory.variant_id = variant.id
+                where variant.tenant_id = ${input.tenantId}
+                  and product.status = 'published'
+                  and variant.status = 'published'
+                  and variant.price_minor > 0
+                  and inventory.available > 0
+              `.execute(trx);
+                if (Number(sellable.rows[0]?.count ?? 0) === 0) {
+                  throw new Error('SHOP_PUBLISH_INVALID');
+                }
+              }
+              const updated = await sql<{ version: number }>`
+              update catalog.shops
+              set status = ${target},
+                  published_at = case
+                    when ${target}::text = 'published' then coalesce(published_at, now())
+                    else published_at
+                  end,
+                  version = version + 1,
+                  updated_at = now()
+              where tenant_id = ${input.tenantId}
+                and version = ${input.expectedVersion}
+                and status in ('draft', 'published')
+              returning version
+            `.execute(trx);
+              if (!updated.rows[0]) {
+                throw new Error('SETTINGS_VERSION_CONFLICT');
+              }
+              const after = await readMerchantSettings(trx, input.tenantId, input.testMode, role);
+              if (!after) {
+                throw new Error('TENANT_UNKNOWN');
+              }
+              await sql`
+              insert into catalog.shop_audits (
+                id, tenant_id, actor_id, version_before, version_after,
+                reason, before_record, after_record
+              )
+              values (
+                ${randomUUID()}::uuid,
+                ${input.tenantId},
+                ${input.userId.toLowerCase()}::uuid,
+                ${before.version},
+                ${after.version},
+                ${input.published ? 'Shop published' : 'Shop unpublished'},
+                ${JSON.stringify(before)}::jsonb,
+                ${JSON.stringify(after)}::jsonb
+              )
+            `.execute(trx);
+              return after;
+            },
+          );
+        },
+      );
+    },
     syncIdentity,
     async membershipRole(userId, tenantId) {
       return withAuthContext(db, { userId, tenantId }, async (trx) => {
@@ -3563,7 +3696,7 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
               requestHash: command.requestHash,
             },
             async () => {
-              const slug = `${baseSlug.slice(0, 39)}-${randomUUID().slice(0, 8)}`;
+              const slug = `${slugPrefix(baseSlug, 39)}-${randomUUID().slice(0, 8)}`;
               const tenantId = `${slug}-${randomUUID().slice(0, 8)}`;
               await sql`
                 select app_private.provision_shop(
@@ -3606,7 +3739,7 @@ export function createPostgresTenantRepository(db: Kysely<Database>): TenantRepo
           if (attempt !== 0 || !isUniqueViolation(error)) {
             throw error;
           }
-          slug = `${baseSlug.slice(0, 39)}-${randomUUID().slice(0, 8)}`;
+          slug = `${slugPrefix(baseSlug, 39)}-${randomUUID().slice(0, 8)}`;
           tenantId = `${slug}-${randomUUID().slice(0, 8)}`;
         }
       }

@@ -131,7 +131,8 @@ export function publicCatalogSearch(filters: ShopFilterParams, cursor?: string):
   if (max !== null) {
     query.set('maxPriceMinor', max);
   }
-  if (filters.sort !== 'relevance') {
+  // The directory API defaults to rating order, so a search must ask for relevance explicitly.
+  if (filters.sort !== 'relevance' || q) {
     query.set('sort', filters.sort);
   }
   if (cursor) {

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { useApi } from '../account';
 import { canManageCatalog } from '../capabilities';
 import {
@@ -14,7 +15,9 @@ import {
   merchantCommandKey,
   merchantErrorMessage,
   useMerchantPagedResource,
+  useMerchantResource,
   type MerchantCatalogItem,
+  type MerchantRules,
 } from '../merchant-api';
 
 type ProductDraft = {
@@ -40,6 +43,20 @@ const EMPTY_DRAFT: ProductDraft = {
 };
 
 const EXACT_INR = /^(0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
+// Same shape the API and public catalog accept, so storefront Buy links resolve.
+const SKU_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+
+// Accept what merchants naturally type ("₹1,299", "1 299.50") and send exact decimals.
+function normalizedPrice(value: string): string {
+  return value.replace(/[₹,\s]/g, '');
+}
+
+function priceMinor(value: string): bigint | null {
+  const price = normalizedPrice(value);
+  if (!EXACT_INR.test(price)) return null;
+  const [rupees = '0', fraction = ''] = price.split('.');
+  return BigInt(rupees) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
+}
 
 function priceInput(item: MerchantCatalogItem): string {
   const minor = BigInt(item.priceMinor);
@@ -58,6 +75,11 @@ export function MerchantCatalogPage() {
     `/v1/merchant/shops/${shop.tenantId}/catalog?limit=50`,
     (item) => item.productId,
   );
+  // Only used to warn when a price is above the hard cap; failures stay silent.
+  const rules = useMerchantResource<MerchantRules>(
+    canWrite ? `/v1/merchant/shops/${shop.tenantId}/rules` : null,
+  );
+  const editorRef = useRef<HTMLFormElement>(null);
   const [items, setItems] = useState<MerchantCatalogItem[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MerchantCatalogItem | null>(null);
@@ -72,6 +94,13 @@ export function MerchantCatalogPage() {
   useEffect(() => {
     setItems(resource.items);
   }, [resource.items]);
+
+  // The editor renders above the table; bring it into view when opened from a far row.
+  useEffect(() => {
+    if (editorOpen) {
+      editorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+  }, [editorOpen, editing]);
 
   function openCreate() {
     setEditing(null);
@@ -99,22 +128,33 @@ export function MerchantCatalogPage() {
   }
 
   function validateProduct(): string | null {
-    if (!EXACT_INR.test(draft.price)) {
+    const price = normalizedPrice(draft.price);
+    if (!EXACT_INR.test(price)) {
       return 'Use rupees with no more than 2 decimal places.';
+    }
+    if (draft.title.trim().length < 2) {
+      return 'Title needs at least 2 characters.';
+    }
+    if (!SKU_PATTERN.test(draft.sku.trim())) {
+      return 'SKU can use letters, numbers and . _ : - (no spaces).';
     }
     if (!Number.isSafeInteger(Number(draft.stock)) || Number(draft.stock) < 0) {
       return 'Stock must be a whole number of units.';
     }
-    if (
-      draft.status === 'published' &&
-      (!draft.title.trim() ||
+    if (draft.status === 'published') {
+      if (
         !draft.description.trim() ||
         !draft.category.trim() ||
-        !draft.sku.trim() ||
-        Number(draft.price) <= 0 ||
-        Number(draft.stock) <= 0)
-    ) {
-      return 'Published products need title, description, category, SKU, positive price, and stock.';
+        Number(price) <= 0 ||
+        (!editing && Number(draft.stock) <= 0)
+      ) {
+        return 'Published products need title, description, category, SKU, positive price, and stock.';
+      }
+      // Stock is only required when a draft is first published; the Stock field is
+      // locked while editing, so point at the adjustment control instead.
+      if (editing && editing.status !== 'published' && editing.inventory.available <= 0) {
+        return 'Add stock with “Adjust stock” before publishing this product.';
+      }
     }
     return null;
   }
@@ -136,7 +176,7 @@ export function MerchantCatalogPage() {
       category: draft.category.trim(),
       sku: draft.sku.trim(),
       material: draft.material,
-      price: draft.price,
+      price: normalizedPrice(draft.price),
       ...(editing ? {} : { stock: Number(draft.stock) }),
       status: draft.status,
       ...(editing ? { reason: 'Catalog record edited by a merchant member.' } : {}),
@@ -154,7 +194,11 @@ export function MerchantCatalogPage() {
         const without = current.filter((item) => item.productId !== response.item.productId);
         return [response.item, ...without];
       });
-      setSuccess('Product saved');
+      setSuccess(
+        shop.status === 'draft' && response.item.status === 'published'
+          ? "Product saved. Your shop is still a draft, so buyers can't see it until the shop is published."
+          : 'Product saved',
+      );
       setEditorOpen(false);
       setEditing(null);
     } catch (cause) {
@@ -231,6 +275,11 @@ export function MerchantCatalogPage() {
   }
 
   const displayedItems = items.length === 0 && resource.items.length ? resource.items : items;
+  const draftPriceMinor = priceMinor(draft.price);
+  const aboveHardCap =
+    rules.data && draftPriceMinor !== null && draftPriceMinor > BigInt(rules.data.hardCapMinor)
+      ? rules.data.hardCapDisplay
+      : null;
 
   return (
     <section className="merchant-page merchant-catalog-page">
@@ -255,6 +304,7 @@ export function MerchantCatalogPage() {
       {success ? <FormNotice kind="success">{success}</FormNotice> : null}
       {editorOpen ? (
         <form
+          ref={editorRef}
           className="merchant-record-form"
           aria-labelledby="catalog-editor-title"
           onSubmit={(event) => {
@@ -281,6 +331,7 @@ export function MerchantCatalogPage() {
               <input
                 value={draft.title}
                 onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                minLength={2}
                 maxLength={180}
                 required
               />
@@ -308,6 +359,9 @@ export function MerchantCatalogPage() {
                 value={draft.sku}
                 onChange={(event) => setDraft({ ...draft, sku: event.target.value })}
                 maxLength={160}
+                placeholder="lamp.brass-01"
+                autoComplete="off"
+                spellCheck={false}
                 required
               />
             </label>
@@ -328,16 +382,25 @@ export function MerchantCatalogPage() {
                 <option value="other">Other</option>
               </select>
             </label>
-            <label>
-              Price in INR
-              <input
-                value={draft.price}
-                onChange={(event) => setDraft({ ...draft, price: event.target.value })}
-                inputMode="decimal"
-                placeholder="0.00"
-                required
-              />
-            </label>
+            <div className="merchant-field">
+              <label>
+                Price in INR
+                <input
+                  value={draft.price}
+                  onChange={(event) => setDraft({ ...draft, price: event.target.value })}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  aria-describedby={aboveHardCap ? 'catalog-price-cap' : undefined}
+                  required
+                />
+              </label>
+              {aboveHardCap ? (
+                <small id="catalog-price-cap" className="field-hint" data-tone="warning">
+                  Above the {aboveHardCap} hard cap — buyers can't check out at this price. Raise it
+                  in <Link to={`/merchant/shops/${shop.tenantId}/rules`}>Rules</Link>.
+                </small>
+              ) : null}
+            </div>
             <label>
               Stock
               <input
@@ -348,19 +411,25 @@ export function MerchantCatalogPage() {
                 required
               />
             </label>
-            <label>
-              Status
-              <select
-                value={draft.status}
-                onChange={(event) =>
-                  setDraft({ ...draft, status: event.target.value as ProductDraft['status'] })
-                }
-              >
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
-                <option value="archived">Archived</option>
-              </select>
-            </label>
+            <div className="merchant-field">
+              <label>
+                Status
+                <select
+                  value={draft.status}
+                  onChange={(event) =>
+                    setDraft({ ...draft, status: event.target.value as ProductDraft['status'] })
+                  }
+                  aria-describedby="catalog-status-hint"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </label>
+              <small id="catalog-status-hint" className="field-hint">
+                Draft products are hidden from buyers. Publishing needs a price and stock.
+              </small>
+            </div>
           </div>
           <div className="record-form-actions">
             <button type="submit" disabled={busy}>
@@ -444,6 +513,7 @@ export function MerchantCatalogPage() {
                         <button
                           type="button"
                           className="ghost"
+                          aria-label={`Adjust stock for ${item.title}`}
                           onClick={() => {
                             setStockEditor(item.variantId);
                             setStockDelta('');
@@ -451,7 +521,7 @@ export function MerchantCatalogPage() {
                             setError(null);
                           }}
                         >
-                          Adjust stock for {item.title}
+                          Adjust stock
                         </button>
                       </div>
                     ) : (

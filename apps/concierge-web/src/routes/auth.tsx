@@ -1,8 +1,20 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { authErrorMessage, useAuth } from '../auth';
+import { useDocumentTitle } from '../document-title';
 import { DEFAULT_SIGNED_IN_PATH, safeNextPath } from '../navigation';
 import { RouteStatus } from '../route-guards';
+
+function friendlyAuthError(cause: unknown): string {
+  const message = authErrorMessage(cause);
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return 'Can’t reach sign-in right now. Check your connection and try again.';
+  }
+  if (message === 'AUTH_NOT_CONFIGURED') {
+    return 'Sign-in is not configured for this build.';
+  }
+  return message;
+}
 
 function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const auth = useAuth();
@@ -13,8 +25,11 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const next = safeNextPath(search.get('next')) ?? DEFAULT_SIGNED_IN_PATH;
   const query = new URLSearchParams({ next }).toString();
+  const creating = mode === 'sign-up';
+  useDocumentTitle(creating ? 'Create account — Charter' : 'Sign in — Charter');
 
   if (auth.loading) {
     return (
@@ -35,6 +50,7 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     }
     setBusy(true);
     setMessage(null);
+    setNotice(null);
     try {
       if (mode === 'sign-up') {
         const session = await auth.signUp({
@@ -43,7 +59,8 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           options: { data: { name: name.trim() } },
         });
         if (!session) {
-          setMessage('Check your email to confirm the account, then return to sign in.');
+          setPassword('');
+          setNotice('Check your email to confirm the account, then come back and sign in.');
           return;
         }
       } else {
@@ -54,13 +71,12 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
       }
       navigate(next, { replace: true });
     } catch (cause) {
-      setMessage(authErrorMessage(cause));
+      setMessage(friendlyAuthError(cause));
     } finally {
       setBusy(false);
     }
   }
 
-  const creating = mode === 'sign-up';
   return (
     <section className="auth-page">
       <div className="auth-context fade">
@@ -101,7 +117,10 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             type="email"
             autoComplete="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setNotice(null);
+            }}
             required
           />
         </label>
@@ -110,18 +129,33 @@ function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           <input
             type="password"
             autoComplete={creating ? 'new-password' : 'current-password'}
-            minLength={8}
+            minLength={creating ? 8 : undefined}
+            aria-describedby={creating ? 'password-hint' : undefined}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
           />
         </label>
-        {message || auth.error ? (
+        {creating ? (
+          <small id="password-hint" className="field-hint">
+            At least 8 characters.
+          </small>
+        ) : null}
+        {message ? (
           <p className="form-message" role="alert">
-            {message ?? auth.error}
+            {message}
           </p>
         ) : null}
-        <button type="submit" disabled={!auth.configured || busy}>
+        {notice ? (
+          <div className="form-notice" role="status">
+            <p>{notice}</p>
+            <p>
+              Didn’t get it? Check spam, or <Link to={`/auth/sign-in?${query}`}>sign in</Link> if
+              you already have an account.
+            </p>
+          </div>
+        ) : null}
+        <button type="submit" disabled={!auth.configured || busy || notice !== null}>
           {busy ? 'Working…' : creating ? 'Create account' : 'Sign in'}
         </button>
         <p className="form-switch">

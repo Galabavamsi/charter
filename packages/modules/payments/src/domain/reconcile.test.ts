@@ -101,6 +101,19 @@ describe('provider reconciliation classification', () => {
         },
         payments: [],
       }).outcome,
+    ).toBe('same_order_retry_safe');
+    expect(
+      classifyReconciliation({
+        session,
+        order: {
+          id: 'order_1',
+          amount: 234700,
+          currency: 'INR',
+          receipt: 'cht_1',
+          status: 'attempted',
+        },
+        payments: [],
+      }).outcome,
     ).toBe('unknown_attempts');
   });
 

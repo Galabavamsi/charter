@@ -167,8 +167,9 @@ export async function registerStorefrontRoutes(
     protocolStatus: 'evaluator-http-contract',
     discovery: '/.well-known/charter-commerce.json',
     shops: '/api/v1/shops',
-    mcp: { tools: '/mcp/tools', call: '/mcp/call' },
+    mcp: { endpoint: '/mcp', transport: 'streamable-http', tools: '/mcp/tools', call: '/mcp/call' },
     tools: [
+      'shops.search',
       'catalog.search',
       'catalog.detail',
       'cart.create',
@@ -664,6 +665,8 @@ export async function registerStorefrontRoutes(
           error,
           [
             'CART_NOT_FOUND',
+            'CART_EMPTY',
+            'QUOTE_TOTAL_TOO_LOW',
             'SKU_UNKNOWN',
             'AUTHORITY_APPROVAL_REQUIRED',
             'PRODUCT_MATERIAL_FORBIDDEN',
@@ -1091,7 +1094,11 @@ export async function registerStorefrontRoutes(
       try {
         const session = markCheckoutDismissed(id);
         await persist?.saveCheckout(session);
-        const recoveryAttempt = await recovery?.afterFailedPay(session);
+        // Dismissing an authorized or reconciling payment is not a failed pay.
+        const recoveryAttempt =
+          session.status === 'FAILED_PROVISIONAL'
+            ? await recovery?.afterFailedPay(session)
+            : undefined;
         return { ...session, recovery: recoveryAttempt ?? null };
       } catch (error) {
         const code = safeErrorCode(error, ['CHECKOUT_NOT_FOUND'], 'CHECKOUT_ERROR');

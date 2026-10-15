@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../account';
 import {
   MerchantEmpty,
@@ -52,6 +52,14 @@ export function MerchantOrdersPage() {
   const detail = useMerchantResource<MerchantOrderDetail>(
     selectedOrder ? `/v1/merchant/shops/${shop.tenantId}/orders/${selectedOrder}` : null,
   );
+  const detailRef = useRef<HTMLElement>(null);
+
+  // The timeline renders below the list; scroll to it so opening a row visibly does something.
+  useEffect(() => {
+    if (selectedOrder) {
+      detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+  }, [selectedOrder]);
 
   return (
     <section className="merchant-page merchant-orders-page">
@@ -201,7 +209,7 @@ export function MerchantOrdersPage() {
         </button>
       ) : null}
       {selectedOrder ? (
-        <aside className="order-detail" aria-live="polite">
+        <aside ref={detailRef} className="order-detail" aria-live="polite">
           <div className="record-form-head">
             <h3>Order timeline</h3>
             <button type="button" className="ghost" onClick={() => setSelectedOrder(null)}>

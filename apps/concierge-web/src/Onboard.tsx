@@ -19,12 +19,12 @@ const beats: Record<OnboardRole, Array<{ title: string; body: string }>> = {
   ],
   merchant: [
     {
-      title: 'Create the shop. Share the link.',
-      body: 'Add items and stock here. Copy the public shop link or send it on WhatsApp when the catalog is ready.',
+      title: 'Create the shop. Publish. Share the link.',
+      body: 'New shops start as a private draft. Add a product with a price and stock, publish the shop, then copy the public link or send it on WhatsApp.',
     },
     {
-      title: 'Approvals land on this desk.',
-      body: 'If a swap is over the autonomous cap, it waits. Approve or deny. The cart does not change until you do.',
+      title: 'Rules keep Concierge in bounds.',
+      body: 'Concierge cannot quote above your hard cap or sell a forbidden material. Keep the autonomous cap at or above your usual basket; changes above it are held for approval.',
     },
     {
       title: 'Captured money is the record.',

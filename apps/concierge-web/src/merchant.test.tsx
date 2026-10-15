@@ -477,6 +477,104 @@ describe('merchant workspace', () => {
     );
   });
 
+  it('publishes a draft shop from the mast and swaps the banner for a storefront link', async () => {
+    let published = false;
+    const draftShop: AccountShop = { ...shop, status: 'draft', synthetic: false };
+    const base = merchantApi();
+    const api = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/v1/me') {
+        return profile('owner', [{ ...draftShop, status: published ? 'published' : 'draft' }]);
+      }
+      if (path === `/v1/merchant/shops/${shop.tenantId}/publish` && init?.method === 'POST') {
+        published = true;
+        return { settings: { version: 4, status: 'published' } };
+      }
+      if (path === `/v1/merchant/shops/${shop.tenantId}/settings`) {
+        return { version: 3, status: published ? 'published' : 'draft' };
+      }
+      return base(path, init);
+    }) as ApiClient;
+    const result = renderAt(
+      `/merchant/shops/${shop.tenantId}/overview`,
+      profile('owner', [draftShop]),
+      api,
+    );
+
+    expect(await screen.findByText(/buyers can't see this shop yet/i)).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'View storefront' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Shop')).not.toBeInTheDocument();
+    await result.user.click(screen.getByRole('button', { name: 'Publish shop' }));
+
+    expect(await screen.findByRole('link', { name: 'View storefront' })).toHaveAttribute(
+      'href',
+      '/shops/northstar',
+    );
+    expect(screen.queryByText(/buyers can't see this shop yet/i)).not.toBeInTheDocument();
+    const publishCall = vi
+      .mocked(api)
+      .mock.calls.find(([path]) => path === `/v1/merchant/shops/${shop.tenantId}/publish`);
+    expect(publishCall?.[1]).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({ 'idempotency-key': expect.any(String) }),
+    });
+    expect(JSON.parse(String(publishCall?.[1]?.body))).toEqual({
+      expectedVersion: 3,
+      published: true,
+    });
+  });
+
+  it('hides share links on draft settings and explains why publish failed', async () => {
+    const draftShop: AccountShop = { ...shop, status: 'draft' };
+    const base = merchantApi();
+    const api = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === `/v1/merchant/shops/${shop.tenantId}/publish`) {
+        throw new ApiError({ status: 422, code: 'SHOP_PUBLISH_INVALID' });
+      }
+      if (path === `/v1/merchant/shops/${shop.tenantId}/settings`) {
+        return { ...((await base(path, init)) as object), status: 'draft' };
+      }
+      return base(path, init);
+    }) as ApiClient;
+    const result = renderAt(
+      `/merchant/shops/${shop.tenantId}/settings`,
+      profile('owner', [draftShop]),
+      api,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Not public yet' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Copy public link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Share on WhatsApp' })).not.toBeInTheDocument();
+    const settingsShare = screen
+      .getByRole('heading', { name: 'Not public yet' })
+      .closest('section') as HTMLElement;
+    await result.user.click(within(settingsShare).getByRole('button', { name: 'Publish shop' }));
+    expect(await screen.findByText(/publish at least one product with a price/i)).toBeVisible();
+  });
+
+  it('accepts rupee-formatted prices and rejects SKUs with spaces before saving', async () => {
+    const result = renderAt(`/merchant/shops/${shop.tenantId}/catalog`, profile('catalog'));
+    await result.user.click(await screen.findByRole('button', { name: 'Add product' }));
+    await result.user.type(screen.getByLabelText('Title'), 'Desk lamp');
+    await result.user.type(screen.getByLabelText('SKU'), 'LAMP 01');
+    await result.user.type(screen.getByLabelText('Price in INR'), '₹1,299');
+    await result.user.click(screen.getByRole('button', { name: 'Save product' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/SKU can use letters, numbers/);
+    await result.user.clear(screen.getByLabelText('SKU'));
+    await result.user.type(screen.getByLabelText('SKU'), 'lamp.brass-01');
+    await result.user.click(screen.getByRole('button', { name: 'Save product' }));
+
+    await waitFor(() =>
+      expect(vi.mocked(result.api)).toHaveBeenCalledWith(
+        `/v1/merchant/shops/${shop.tenantId}/catalog/products`,
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"price":"1299"'),
+        }),
+      ),
+    );
+  });
+
   it('moves a viewer shop off recovery onto overview and announces the switch', async () => {
     const viewerShop: AccountShop = {
       ...shop,

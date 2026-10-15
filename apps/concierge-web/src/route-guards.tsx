@@ -1,4 +1,5 @@
-import { Navigate, Outlet, useLocation, useParams } from 'react-router';
+import type { ReactNode } from 'react';
+import { Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router';
 import type { ShopRole } from './account';
 import { useAccount } from './account';
 import { useAuth } from './auth';
@@ -9,11 +10,13 @@ export function RouteStatus({
   title,
   body,
   alert = false,
+  action,
 }: {
   code?: string;
   title: string;
   body: string;
   alert?: boolean;
+  action?: ReactNode;
 }) {
   return (
     <section className="route-status" role={alert ? 'alert' : undefined}>
@@ -22,7 +25,35 @@ export function RouteStatus({
         {title}
       </h1>
       <p>{body}</p>
+      {action ? <div className="editorial-actions route-status-actions">{action}</div> : null}
     </section>
+  );
+}
+
+// The stale session is still present on a 401, so a plain sign-in link would bounce
+// straight back here. Drop it first, then return to this page after signing in.
+function SignInAgainButton() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const next = `${location.pathname}${location.search}${location.hash}`;
+  return (
+    <button
+      type="button"
+      className="primary-link"
+      onClick={() => {
+        void auth
+          .signOut()
+          .catch(() => undefined)
+          .finally(() => {
+            navigate(`/auth/sign-in?${new URLSearchParams({ next }).toString()}`, {
+              replace: true,
+            });
+          });
+      }}
+    >
+      Sign in again
+    </button>
   );
 }
 
@@ -61,6 +92,7 @@ function AccountFailure() {
         code="401"
         title="Authentication required"
         body="This session could not be verified. Sign in again to continue."
+        action={<SignInAgainButton />}
       />
     );
   }

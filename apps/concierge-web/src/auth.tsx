@@ -41,6 +41,8 @@ export interface AuthClient {
   signInWithPassword(credentials: PasswordCredentials): Promise<AuthSession>;
   signOut(): Promise<void>;
   onAuthStateChange(listener: (session: AuthSession | null) => void): () => void;
+  /** Mint a fresh access token now (e.g. before a long Talk call). */
+  refreshSession?(): Promise<AuthSession | null>;
 }
 
 type AuthContextValue = {
@@ -52,6 +54,7 @@ type AuthContextValue = {
   signInWithPassword(credentials: PasswordCredentials): Promise<AuthSession>;
   signOut(): Promise<void>;
   getAccessToken(): Promise<string | null>;
+  refreshSession(): Promise<AuthSession | null>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -225,6 +228,13 @@ export function createBrowserAuthClient(env: BrowserAuthEnv = import.meta.env): 
       });
       return () => data.subscription.unsubscribe();
     },
+    async refreshSession() {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        throw error;
+      }
+      return mapSession(data.session);
+    },
   };
 }
 
@@ -272,6 +282,17 @@ export function AuthProvider({ client, children }: { client: AuthClient; childre
   }, [client]);
 
   const getAccessToken = useCallback(async () => sessionRef.current?.accessToken ?? null, []);
+  const refreshSession = useCallback(async () => {
+    if (!client.refreshSession) {
+      return sessionRef.current;
+    }
+    const next = await client.refreshSession();
+    if (next) {
+      sessionRef.current = next;
+      setSession(next);
+    }
+    return next ?? sessionRef.current;
+  }, [client]);
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
     return () => setAccessTokenProvider(async () => null);
@@ -316,8 +337,9 @@ export function AuthProvider({ client, children }: { client: AuthClient; childre
         }
       },
       getAccessToken,
+      refreshSession,
     }),
-    [client, error, getAccessToken, loading, session],
+    [client, error, getAccessToken, loading, refreshSession, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

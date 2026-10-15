@@ -29,6 +29,13 @@ const MONEY_SCHEMA = {
   minLength: 1,
   maxLength: 15,
 } as const;
+// Same shape the public catalog accepts for ?sku=, so storefront Buy links resolve.
+const SKU_SCHEMA = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 160,
+  pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$',
+} as const;
 const IDEMPOTENCY_HEADERS_SCHEMA = {
   type: 'object',
   required: ['idempotency-key'],
@@ -190,6 +197,7 @@ function sendError(
       'RULES_INVALID',
       'SETTINGS_INVALID',
       'SHOP_POLICY_NOT_FOUND',
+      'SHOP_PUBLISH_INVALID',
       'TENANT_UNKNOWN',
       'ORDER_NOT_FOUND',
       'FULFILLMENT_NOT_READY',
@@ -209,6 +217,7 @@ function sendError(
           code === 'ORDER_NOT_FOUND'
         ? 404
         : code === 'CATALOG_PUBLISH_INVALID' ||
+            code === 'SHOP_PUBLISH_INVALID' ||
             code === 'INVENTORY_INSUFFICIENT' ||
             code === 'FULFILLMENT_NOT_READY'
           ? 422
@@ -415,7 +424,7 @@ export async function registerMerchantRoutes(
             title: { type: 'string', minLength: 2, maxLength: 180 },
             description: { type: 'string', maxLength: 2000 },
             category: { type: 'string', maxLength: 120 },
-            sku: { type: 'string', minLength: 1, maxLength: 160 },
+            sku: SKU_SCHEMA,
             material: { type: 'string', enum: ['steel', 'glass', 'paper', 'other'] },
             price: MONEY_SCHEMA,
             stock: { type: 'integer', minimum: 0, maximum: 1_000_000_000 },
@@ -497,7 +506,7 @@ export async function registerMerchantRoutes(
             title: { type: 'string', minLength: 2, maxLength: 180 },
             description: { type: 'string', maxLength: 2000 },
             category: { type: 'string', maxLength: 120 },
-            sku: { type: 'string', minLength: 1, maxLength: 160 },
+            sku: SKU_SCHEMA,
             material: { type: 'string', enum: ['steel', 'glass', 'paper', 'other'] },
             price: MONEY_SCHEMA,
             status: { type: 'string', enum: ['draft', 'published', 'archived'] },
@@ -879,9 +888,11 @@ export async function registerMerchantRoutes(
         return reply.status(404).send({ error: 'RECOVERY_NOT_FOUND', requestId: request.id });
       }
       if (!record.canSend && record.blockedReason !== 'RECONCILIATION_REQUIRED') {
+        const reason = record.blockedReason ?? 'RECOVERY_BLOCKED';
         return reply.status(409).send({
           action: 'blocked',
-          reason: record.blockedReason ?? 'RECOVERY_BLOCKED',
+          error: reason,
+          reason,
           requestId: request.id,
         });
       }
@@ -889,6 +900,7 @@ export async function registerMerchantRoutes(
       if (!session) {
         return reply.status(409).send({
           action: 'blocked',
+          error: 'CHECKOUT_NOT_FOUND',
           reason: 'CHECKOUT_NOT_FOUND',
           requestId: request.id,
         });
@@ -900,13 +912,17 @@ export async function registerMerchantRoutes(
       if (result.action === 'skipped') {
         return reply.status(409).send({
           action: 'blocked',
+          error: result.reason,
           reason: result.reason,
           requestId: request.id,
         });
       }
-      return reply
-        .status(502)
-        .send({ action: 'failed', reason: 'RECOVERY_SEND_FAILED', requestId: request.id });
+      return reply.status(502).send({
+        action: 'failed',
+        error: 'RECOVERY_SEND_FAILED',
+        reason: 'RECOVERY_SEND_FAILED',
+        requestId: request.id,
+      });
     },
   );
 
@@ -1200,6 +1216,59 @@ export async function registerMerchantRoutes(
         };
       } catch (error) {
         return sendError(request, reply, error, 'SETTINGS_UPDATE_FAILED');
+      }
+    },
+  );
+
+  app.post(
+    '/v1/merchant/shops/:tenantId/publish',
+    {
+      preValidation: requireBuyerPreValidation,
+      schema: {
+        headers: IDEMPOTENCY_HEADERS_SCHEMA,
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['tenantId'],
+          properties: { tenantId: TENANT_ID_SCHEMA },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['expectedVersion', 'published'],
+          properties: {
+            expectedVersion: { type: 'integer', minimum: 1 },
+            published: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.params as { tenantId: string };
+      const access = await requireMerchantCapability(
+        request,
+        reply,
+        repository,
+        tenantId,
+        MANAGERS,
+      );
+      if (!access) return;
+      const body = request.body as { expectedVersion: number; published: boolean };
+      try {
+        return {
+          settings: await repository.publishMerchantShop({
+            userId: access.principal.userId,
+            tenantId,
+            expectedVersion: body.expectedVersion,
+            published: body.published,
+            testMode: config.RAZORPAY_MODE === 'test',
+            idempotencyKey: idempotencyKey(request),
+            requestHash: requestHash(body),
+          }),
+          requestId: request.id,
+        };
+      } catch (error) {
+        return sendError(request, reply, error, 'SHOP_PUBLISH_FAILED');
       }
     },
   );

@@ -6,6 +6,7 @@ import {
   applyCheckoutCallback,
   applyRazorpayWebhook,
   hydrateCheckout,
+  listCheckouts,
   markCheckoutDismissed,
   resetCheckouts,
   startCheckout,
@@ -57,6 +58,66 @@ function mockOrders(
       return new Response(JSON.stringify({ items: [] }));
     }
     throw new Error(href);
+  };
+}
+
+function providerScript(input: {
+  orderId: string;
+  orderStatus: string;
+  payments?: () => Array<{ id: string; status: string }>;
+  payment?: () => Response;
+  onCreate?: () => void;
+}) {
+  return (async (url: string | URL, init?: RequestInit) => {
+    const href = String(url);
+    if (href.endsWith('/orders') && init?.method === 'POST') {
+      input.onCreate?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return new Response(
+        JSON.stringify({
+          id: input.orderId,
+          amount: 234700,
+          currency: 'INR',
+          receipt: JSON.parse(String(init.body)).receipt,
+          status: 'created',
+        }),
+      );
+    }
+    if (href.includes(`/orders/${input.orderId}/payments`)) {
+      return new Response(
+        JSON.stringify({
+          items: (input.payments?.() ?? []).map((payment) => ({
+            ...payment,
+            order_id: input.orderId,
+            amount: 234700,
+            currency: 'INR',
+          })),
+        }),
+      );
+    }
+    if (href.includes(`/orders/${input.orderId}`)) {
+      return new Response(
+        JSON.stringify({
+          id: input.orderId,
+          amount: 234700,
+          currency: 'INR',
+          receipt: 'cht_test',
+          status: input.orderStatus,
+        }),
+      );
+    }
+    if (href.includes('/payments/') && input.payment) {
+      return input.payment();
+    }
+    throw new Error(href);
+  }) as typeof fetch;
+}
+
+function signed(orderId: string, paymentId: string) {
+  return {
+    orderId,
+    paymentId,
+    signature: createHmac('sha256', 'secret').update(`${orderId}|${paymentId}`).digest('hex'),
   };
 }
 
@@ -392,5 +453,94 @@ describe('checkout capture rule', () => {
       paid: false,
       fulfillmentReady: false,
     });
+  });
+  it('reopens the same Order when Razorpay was closed before any payment attempt', async () => {
+    const { quote } = buildCanonicalKit();
+    let created = 0;
+    const client = new RazorpayClient(
+      { keyId: 'rzp_test_x', keySecret: 'secret' },
+      providerScript({
+        orderId: 'order_closed',
+        orderStatus: 'created',
+        onCreate: () => (created += 1),
+      }),
+    );
+    const first = await startCheckout(quote.id, client);
+    expect(markCheckoutDismissed(first.session.id).status).toBe('FAILED_PROVISIONAL');
+    const retry = await startCheckout(quote.id, client);
+    expect(retry.session.id).toBe(first.session.id);
+    expect(retry.session.razorpayOrderId).toBe('order_closed');
+    expect(retry.session.status).toBe('CREATED');
+    expect(created).toBe(1);
+  });
+
+  it('settles a capture-pending checkout once the provider shows the capture', async () => {
+    const { quote } = buildCanonicalKit();
+    let captured = false;
+    const client = new RazorpayClient(
+      { keyId: 'rzp_test_x', keySecret: 'secret' },
+      providerScript({
+        orderId: 'order_pending',
+        orderStatus: 'attempted',
+        payments: () => [{ id: 'pay_1', status: captured ? 'captured' : 'authorized' }],
+        payment: () =>
+          new Response(
+            JSON.stringify({
+              id: 'pay_1',
+              order_id: 'order_pending',
+              amount: 234700,
+              currency: 'INR',
+              status: 'authorized',
+            }),
+          ),
+      }),
+    );
+    const { session } = await startCheckout(quote.id, client);
+    await applyCheckoutCallback(session.id, signed('order_pending', 'pay_1'), client, 'secret');
+    expect(session.status).toBe('CAPTURE_PENDING');
+    expect(markCheckoutDismissed(session.id).status).toBe('CAPTURE_PENDING');
+    await expect(startCheckout(quote.id, client)).rejects.toThrow('PAYMENT_AUTHORIZED');
+    captured = true;
+    const settled = await startCheckout(quote.id, client);
+    expect(settled.session.status).toBe('SETTLED');
+    expect(settled.quote.status).toBe('SETTLED');
+  });
+
+  it('mints one Razorpay Order for concurrent Pay clicks on the same quote', async () => {
+    const { quote } = buildCanonicalKit();
+    let created = 0;
+    const client = new RazorpayClient(
+      { keyId: 'rzp_test_x', keySecret: 'secret' },
+      providerScript({
+        orderId: 'order_double',
+        orderStatus: 'created',
+        onCreate: () => (created += 1),
+      }),
+    );
+    const [first, second] = await Promise.all([
+      startCheckout(quote.id, client),
+      startCheckout(quote.id, client),
+    ]);
+    expect(created).toBe(1);
+    expect(second.session.id).toBe(first.session.id);
+    expect(listCheckouts()).toHaveLength(1);
+  });
+
+  it('does not strand a verified callback on VERIFYING when the provider lookup fails', async () => {
+    const { quote } = buildCanonicalKit();
+    const client = new RazorpayClient(
+      { keyId: 'rzp_test_x', keySecret: 'secret' },
+      providerScript({
+        orderId: 'order_timeout',
+        orderStatus: 'attempted',
+        payment: () => new Response('unavailable', { status: 503 }),
+      }),
+    );
+    const { session } = await startCheckout(quote.id, client);
+    await expect(
+      applyCheckoutCallback(session.id, signed('order_timeout', 'pay_slow'), client, 'secret'),
+    ).rejects.toThrow('RAZORPAY_PAYMENT_LOOKUP_FAILED');
+    expect(session.status).toBe('RECONCILING');
+    expect(session.paymentId).toBe('pay_slow');
   });
 });

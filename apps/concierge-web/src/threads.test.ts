@@ -79,20 +79,26 @@ describe('tenant-scoped chat threads', () => {
     expect(getThread(indigo, 'same')?.title).toBe('Indigo');
   });
 
-  it('deduplicates the same title in one shop and lists chats across shops', () => {
+  it('keeps two chats that share a title in one shop and lists chats across shops', () => {
     upsertThread(northstar, thread('thread-a', 'surprise gift'));
     upsertThread(northstar, {
       ...thread('thread-b', 'surprise gift'),
       updatedAt: '2026-08-22T00:00:00.000Z',
     });
-    upsertThread(indigo, thread('thread-c', 'desk lamp'));
+    upsertThread(indigo, {
+      ...thread('thread-c', 'desk lamp'),
+      updatedAt: '2026-08-21T00:00:00.000Z',
+    });
+    upsertThread(northstar, { ...thread('thread-a', 'surprise gift'), messages: [] });
 
-    expect(listThreads(northstar)).toHaveLength(1);
+    expect(listThreads(northstar).map((item) => item.id)).toEqual(['thread-a', 'thread-b']);
     expect(listAllUserThreads('user-1').map((item) => item.title)).toEqual([
+      'surprise gift',
       'surprise gift',
       'desk lamp',
     ]);
     expect(listAllUserThreads('user-1').map((item) => item.shopId)).toEqual([
+      'northstar-demo-in',
       'northstar-demo-in',
       'indigo-desk-in',
     ]);

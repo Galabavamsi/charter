@@ -1065,6 +1065,166 @@ describe('memory merchant repository', () => {
     );
   });
 
+  it('publishes a new draft shop only once it has a sellable product', async () => {
+    const store = createMemoryTenantRepository();
+    const ownerId = 'a1000000-0000-4000-8000-000000000077';
+    const shop = await store.provisionShop(
+      { userId: ownerId, email: 'publisher@example.invalid' },
+      { name: 'Handwoven Cotton Table Runners and Matching Set of Two', blurb: 'Linen.' },
+    );
+    expect(shop.status).toBe('draft');
+    // A 48-character cut lands on the hyphen after "set"; it must be trimmed.
+    expect(shop.slug).toBe('handwoven-cotton-table-runners-and-matching-set');
+    expect(await store.findShopBySlug(shop.slug)).toBeUndefined();
+    const settings = await store.getMerchantSettings({
+      userId: ownerId,
+      tenantId: shop.tenantId,
+      testMode: true,
+    });
+    expect(settings).toMatchObject({ status: 'draft', publishedAt: null, version: 1 });
+    const publish = (version: number, key: string, published = true) =>
+      store.publishMerchantShop({
+        userId: ownerId,
+        tenantId: shop.tenantId,
+        expectedVersion: version,
+        published,
+        testMode: true,
+        idempotencyKey: key,
+        requestHash: `${key}-hash`,
+      });
+
+    await expect(publish(1, 'publish-empty')).rejects.toThrow('SHOP_PUBLISH_INVALID');
+    await store.createMerchantProduct({
+      userId: ownerId,
+      tenantId: shop.tenantId,
+      title: 'Indigo runner',
+      description: 'Hand-loomed cotton runner.',
+      category: 'Table linen',
+      sku: 'runner.indigo',
+      material: 'other',
+      priceMinor: '129900',
+      stock: 0,
+      status: 'draft',
+      idempotencyKey: 'runner-draft',
+      requestHash: 'runner-draft-hash',
+    });
+    await expect(publish(1, 'publish-draft-only')).rejects.toThrow('SHOP_PUBLISH_INVALID');
+    await store.createMerchantProduct({
+      userId: ownerId,
+      tenantId: shop.tenantId,
+      title: 'Ochre runner',
+      description: 'Hand-loomed cotton runner.',
+      category: 'Table linen',
+      sku: 'runner.ochre',
+      material: 'other',
+      priceMinor: '129900',
+      stock: 3,
+      status: 'published',
+      idempotencyKey: 'runner-published',
+      requestHash: 'runner-published-hash',
+    });
+    await expect(
+      store.createMerchantProduct({
+        userId: ownerId,
+        tenantId: shop.tenantId,
+        title: 'Ochre runner copy',
+        description: 'Duplicate SKU.',
+        category: 'Table linen',
+        sku: 'runner.ochre',
+        material: 'other',
+        priceMinor: '129900',
+        stock: 1,
+        status: 'draft',
+        idempotencyKey: 'runner-duplicate',
+        requestHash: 'runner-duplicate-hash',
+      }),
+    ).rejects.toThrow('CATALOG_SKU_CONFLICT');
+
+    const published = await publish(1, 'publish-ready');
+    expect(published).toMatchObject({ status: 'published', version: 2 });
+    expect(published.publishedAt).toEqual(expect.any(String));
+    expect(await publish(1, 'publish-ready')).toMatchObject({ status: 'published', version: 2 });
+    await expect(publish(1, 'publish-stale')).rejects.toThrow('SETTINGS_VERSION_CONFLICT');
+    expect(await store.findShopBySlug(shop.slug)).toMatchObject({ tenantId: shop.tenantId });
+    expect((await store.listMemberShops(ownerId))[0]?.status).toBe('published');
+    expect(store.state.shopAudits).toContainEqual(
+      expect.objectContaining({ tenantId: shop.tenantId, reason: 'Shop published' }),
+    );
+
+    const unpublished = await publish(2, 'unpublish', false);
+    expect(unpublished).toMatchObject({ status: 'draft', version: 3 });
+    expect(unpublished.publishedAt).toBe(published.publishedAt);
+    expect(await store.findShopBySlug(shop.slug)).toBeUndefined();
+  });
+
+  it('keeps publish managers-only and lets a sold-out published product be edited', async () => {
+    const store = repository();
+    const settings = await store.getMerchantSettings({
+      userId: OWNER,
+      tenantId: TENANT_ID,
+      testMode: true,
+    });
+    expect(settings?.status).toBe('published');
+    await expect(
+      store.publishMerchantShop({
+        userId: CATALOG,
+        tenantId: TENANT_ID,
+        expectedVersion: settings!.version,
+        published: false,
+        testMode: true,
+        idempotencyKey: 'catalog-unpublish',
+        requestHash: 'catalog-unpublish-hash',
+      }),
+    ).rejects.toThrow('SHOP_MEMBERSHIP_REQUIRED');
+
+    const created = await store.createMerchantProduct({
+      userId: CATALOG,
+      tenantId: TENANT_ID,
+      title: 'Last flask',
+      description: 'Only one left.',
+      category: 'Travel coffee',
+      sku: 'flask.last-one',
+      material: 'steel',
+      priceMinor: '49900',
+      stock: 1,
+      status: 'published',
+      idempotencyKey: 'last-flask',
+      requestHash: 'last-flask-hash',
+    });
+    await store.adjustMerchantStock({
+      userId: CATALOG,
+      tenantId: TENANT_ID,
+      variantId: created.variantId,
+      expectedVersion: created.inventory.version,
+      delta: -1,
+      reason: 'Sold the last unit offline.',
+      idempotencyKey: 'last-flask-sold',
+      requestHash: 'last-flask-sold-hash',
+    });
+    const edited = await store.updateMerchantProduct({
+      userId: CATALOG,
+      tenantId: TENANT_ID,
+      productId: created.productId,
+      expectedVersion: created.productVersion,
+      title: 'Last flask (steel)',
+      description: 'Only one left.',
+      category: 'Travel coffee',
+      sku: 'flask.last-one',
+      material: 'steel',
+      priceMinor: '44900',
+      status: 'published',
+      reason: 'Fix the title on a sold-out listing.',
+      idempotencyKey: 'last-flask-edit',
+      requestHash: 'last-flask-edit-hash',
+    });
+    expect(edited).toMatchObject({
+      title: 'Last flask (steel)',
+      priceMinor: '44900',
+      status: 'published',
+      inventory: { available: 0 },
+    });
+  });
+
   it('records discovery impressions for merchant overview plots', async () => {
     const store = repository();
     await store.recordDiscovery({

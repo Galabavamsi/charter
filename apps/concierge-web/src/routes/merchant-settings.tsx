@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { useApi } from '../account';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
+import { useAccount, useApi } from '../account';
 import { canManageSettings } from '../capabilities';
 import {
   FormNotice,
@@ -12,6 +13,7 @@ import { useMerchantShop } from '../merchant-context';
 import {
   merchantCommandKey,
   merchantErrorMessage,
+  setMerchantShopPublished,
   useMerchantResource,
   type MerchantSettings,
 } from '../merchant-api';
@@ -27,11 +29,23 @@ function whatsappUrl(name: string, path: string): string {
 
 export function MerchantSettingsPage() {
   const api = useApi();
+  const { refresh } = useAccount();
   const shop = useMerchantShop();
   const canWrite = canManageSettings(shop.role);
   const resource = useMerchantResource<MerchantSettings>(
     `/v1/merchant/shops/${shop.tenantId}/settings`,
   );
+  const [publishing, setPublishing] = useState(false);
+  // Publishing from the mast bumps the settings version; reload once when the
+  // account's shop status changes so the next save does not hit a version conflict.
+  const seenStatus = useRef(shop.status);
+  const reloadSettings = resource.reload;
+  useEffect(() => {
+    if (seenStatus.current !== shop.status) {
+      seenStatus.current = shop.status;
+      void reloadSettings();
+    }
+  }, [shop.status, reloadSettings]);
   const [name, setName] = useState('');
   const [blurb, setBlurb] = useState('');
   const [gstin, setGstin] = useState('');
@@ -69,10 +83,37 @@ export function MerchantSettingsPage() {
       });
       setNotice({ kind: 'success', text: 'Shop settings saved' });
       await resource.reload();
+      // The header, breadcrumb, and shop switcher read the name from the account.
+      await refresh();
     } catch (cause) {
       setNotice({ kind: 'error', text: merchantErrorMessage(cause) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function setPublished(published: boolean) {
+    if (!resource.data) return;
+    setPublishing(true);
+    setNotice(null);
+    try {
+      const next = await setMerchantShopPublished(
+        api,
+        shop.tenantId,
+        published,
+        resource.data.version,
+      );
+      seenStatus.current = next.status ?? shop.status;
+      setNotice({
+        kind: 'success',
+        text: published ? 'Shop published. Buyers can find it now.' : 'Shop is a draft again.',
+      });
+      await resource.reload();
+      await refresh();
+    } catch (cause) {
+      setNotice({ kind: 'error', text: merchantErrorMessage(cause) });
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -197,26 +238,61 @@ export function MerchantSettingsPage() {
               </div>
             ) : null}
           </form>
-          <section className="settings-share" aria-labelledby="settings-share-title">
-            <div>
-              <p className="eyebrow">Public link</p>
-              <h3 id="settings-share-title">Share this shop</h3>
-              <a href={resource.data.publicPath}>{publicUrl(resource.data.publicPath)}</a>
-            </div>
-            <div className="record-actions">
-              <button type="button" className="ghost" onClick={() => void copyLink()}>
-                Copy public link
-              </button>
-              <a
-                className="ghost link-btn"
-                href={whatsappUrl(resource.data.name, resource.data.publicPath)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Share on WhatsApp
-              </a>
-            </div>
-          </section>
+          {(resource.data.status ?? shop.status) === 'published' ? (
+            <section className="settings-share" aria-labelledby="settings-share-title">
+              <div>
+                <p className="eyebrow">Public link</p>
+                <h3 id="settings-share-title">Share this shop</h3>
+                <Link to={resource.data.publicPath}>{publicUrl(resource.data.publicPath)}</Link>
+              </div>
+              <div className="record-actions">
+                <button type="button" className="ghost" onClick={() => void copyLink()}>
+                  Copy public link
+                </button>
+                <a
+                  className="ghost link-btn"
+                  href={whatsappUrl(resource.data.name, resource.data.publicPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Share on WhatsApp
+                </a>
+                {canWrite ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={publishing}
+                    onClick={() => void setPublished(false)}
+                  >
+                    {publishing ? 'Unpublishing…' : 'Unpublish'}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : (
+            <section className="settings-share" aria-labelledby="settings-share-title">
+              <div>
+                <p className="eyebrow">Public link</p>
+                <h3 id="settings-share-title">Not public yet</h3>
+                <p>
+                  {canWrite
+                    ? 'Publish the shop to share it. Buyers need at least one published product with a price and stock.'
+                    : 'An owner or admin can publish this shop. Its link stays private until then.'}
+                </p>
+              </div>
+              {canWrite ? (
+                <div className="record-actions">
+                  <button
+                    type="button"
+                    disabled={publishing}
+                    onClick={() => void setPublished(true)}
+                  >
+                    {publishing ? 'Publishing…' : 'Publish shop'}
+                  </button>
+                </div>
+              ) : null}
+            </section>
+          )}
           <aside className="payment-disclosure" aria-label="Environment and payment disclosure">
             <RecordStatus
               label={resource.data.testMode ? 'Test mode' : 'Live mode'}

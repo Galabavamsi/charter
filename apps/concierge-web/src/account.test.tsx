@@ -138,4 +138,47 @@ describe('AccountProvider session isolation', () => {
     await act(async () => delayedB.resolve(profile(userB)));
     expect(await screen.findByText('account:user-b')).toBeVisible();
   });
+
+  it('keeps the same user ready through token refresh and refresh()', async () => {
+    const delayedRefresh = deferred<AccountProfile>();
+    let calls = 0;
+    const api = vi.fn(async () => {
+      calls += 1;
+      return calls === 1 ? profile(userA) : delayedRefresh.promise;
+    }) as ApiClient;
+    const client = switchableClient(userA);
+    let refresh!: () => Promise<void>;
+    function RefreshProbe() {
+      refresh = useAccount().refresh;
+      return null;
+    }
+    render(
+      <AuthProvider client={client}>
+        <ApiProvider client={api}>
+          <AccountProvider>
+            <AccountProbe />
+            <RefreshProbe />
+          </AccountProvider>
+        </ApiProvider>
+      </AuthProvider>,
+    );
+    expect(await screen.findByText('account:user-a')).toBeVisible();
+    const callsBeforeTokenRefresh = vi.mocked(api).mock.calls.length;
+
+    act(() => client.switchTo({ ...userA, accessToken: 'token-a-refreshed' }));
+    expect(screen.getByText('status:ready')).toBeVisible();
+    expect(vi.mocked(api).mock.calls.length).toBe(callsBeforeTokenRefresh);
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = refresh();
+    });
+    expect(screen.getByText('status:ready')).toBeVisible();
+    expect(screen.getByText('account:user-a')).toBeVisible();
+    await act(async () => {
+      delayedRefresh.resolve(profile(userA));
+      await pending;
+    });
+    expect(screen.getByText('status:ready')).toBeVisible();
+  });
 });

@@ -175,7 +175,7 @@ describe('shop directory route', () => {
 
   it('offers a one-action reset when no shops match', async () => {
     const api = vi.fn(async (path: string) => {
-      if (path === '/v1/shops?q=missing') {
+      if (path === '/v1/shops?q=missing&sort=relevance') {
         return { items: [], total: 0, nextCursor: null, facets: { ...facets, categories: [] } };
       }
       if (path.startsWith('/v1/shops')) {
@@ -253,15 +253,15 @@ describe('shop directory route', () => {
         }),
     ) as ApiClient;
     const result = renderAt('/shops?q=desk', api);
-    await waitFor(() => expect(pending.has('/v1/shops?q=desk')).toBe(true));
+    const desk = '/v1/shops?q=desk&sort=relevance';
+    const coffee = '/v1/shops?q=coffee&sort=relevance';
+    await waitFor(() => expect(pending.has(desk)).toBe(true));
 
     await result.router.navigate('/shops?q=coffee');
-    await waitFor(() => expect(pending.has('/v1/shops?q=coffee')).toBe(true));
-    expect(pending.get('/v1/shops?q=desk')?.signal?.aborted).toBe(true);
-    pending
-      .get('/v1/shops?q=coffee')
-      ?.resolve({ items: [northstar], total: 1, nextCursor: null, facets });
-    pending.get('/v1/shops?q=desk')?.resolve({ items: [shop], total: 1, nextCursor: null, facets });
+    await waitFor(() => expect(pending.has(coffee)).toBe(true));
+    expect(pending.get(desk)?.signal?.aborted).toBe(true);
+    pending.get(coffee)?.resolve({ items: [northstar], total: 1, nextCursor: null, facets });
+    pending.get(desk)?.resolve({ items: [shop], total: 1, nextCursor: null, facets });
 
     expect(await screen.findByRole('link', { name: /Northstar Travel Coffee/i })).toBeVisible();
     expect(screen.queryByRole('link', { name: /Indigo Desk/i })).not.toBeInTheDocument();
@@ -331,7 +331,7 @@ describe('shop directory route', () => {
 
     await result.router.navigate('/auth/sign-in');
     expect(await screen.findByRole('heading', { name: 'Sign in to Charter' })).toBeVisible();
-    await waitFor(() => expect(document.title).toBe('Charter'));
+    await waitFor(() => expect(document.title).toBe('Sign in — Charter'));
     await waitFor(() =>
       expect(document.head.querySelectorAll('[data-charter-head]')).toHaveLength(0),
     );
@@ -541,8 +541,8 @@ describe('agents route', () => {
     expect(screen.getByRole('link', { name: 'Agents' })).toBeVisible();
     expect(screen.getByRole('link', { name: /well-known\/charter-commerce\.json/i })).toBeVisible();
     expect(screen.getByRole('link', { name: 'GET /mcp/tools' })).toBeVisible();
-    expect(screen.getByRole('row', { name: /catalog\.search/i })).toBeVisible();
-    expect(screen.getByRole('row', { name: /checkout\.complete/i })).toBeVisible();
+    expect(screen.getByRole('row', { name: /catalog_search/i })).toBeVisible();
+    expect(screen.getByRole('row', { name: /checkout_complete/i })).toBeVisible();
     expect(screen.getByText(/Not certified: UCP, ACP, AP2, Gemini, Alexa/i)).toBeVisible();
   });
 });
@@ -553,7 +553,7 @@ describe('public landing', () => {
     expect(await screen.findByRole('heading', { name: 'Shop by talking.' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Start shopping' })).toHaveAttribute(
       'href',
-      '/auth/sign-in',
+      '/auth/sign-up',
     );
     expect(screen.getByRole('link', { name: 'Browse shops' })).toHaveAttribute('href', '/shops');
     const film = document.querySelector('.home-hero-media video');

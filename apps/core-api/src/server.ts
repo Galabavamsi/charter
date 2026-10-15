@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -27,6 +27,7 @@ import { createPostgresTenantRepository } from './tenant/postgres-repository.js'
 import {
   renderAgentsIndexHtml,
   renderDirectoryIndexHtml,
+  renderHomeIndexHtml,
   renderShopIndexHtml,
   robotsText,
   safePublicOrigin,
@@ -56,6 +57,24 @@ function isSpaNavigation(method: string, url: string): boolean {
   return method === 'GET' && !reserved && extname(pathname) === '';
 }
 
+const PUBLIC_SHOP_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// Static files and /health stay out of the per-IP budget: one page load is ~20
+// same-origin requests, and a 429 on a JS chunk blanks the SPA. API, MCP,
+// webhooks and the DB-backed HTML routes (/shops/:slug, /sitemap.xml) stay limited.
+function isRateLimitExempt(url: string): boolean {
+  const pathname = url.split('?')[0] ?? url;
+  // A file-like suffix must not buy API routes out of the limit (/api/v1/shops/x.js).
+  if (/^\/(api|mcp|webhooks|\.well-known)(\/|$)/i.test(pathname)) {
+    return false;
+  }
+  return (
+    /^\/(assets|media|thumbs)\//.test(pathname) ||
+    pathname === '/health' ||
+    /\.(js|css|png|jpg|jpeg|svg|webp|ico|mp4|woff2?)$/.test(pathname)
+  );
+}
+
 export async function buildServer(
   env: NodeJS.ProcessEnv = process.env,
   options: {
@@ -71,7 +90,9 @@ export async function buildServer(
   const config = loadConfig(env);
   const trustProxyHops = config.TRUST_PROXY_HOPS ?? (config.RENDER === 'true' ? 1 : 0);
   const app = Fastify({
-    logger: config.LOG_LEVEL === 'debug',
+    logger: config.CHARTER_ENV === 'test' ? false : { level: config.LOG_LEVEL },
+    // Health checks and static files would flood the log; errors still log below.
+    disableRequestLogging: true,
     bodyLimit: 64 * 1024,
     requestIdHeader: false,
     genReqId: () => randomUUID(),
@@ -102,6 +123,7 @@ export async function buildServer(
     max: 120,
     timeWindow: '1 minute',
     keyGenerator: (request) => request.ip,
+    allowList: (request) => isRateLimitExempt(request.url),
     errorResponseBuilder: (request, context) => ({
       statusCode: context.statusCode,
       error: 'RATE_LIMITED',
@@ -152,16 +174,31 @@ export async function buildServer(
     return payload;
   });
   app.setErrorHandler((error, request, reply) => {
-    if (
+    const statusCode =
       typeof error === 'object' &&
       error !== null &&
       'statusCode' in error &&
-      error.statusCode === 429
-    ) {
+      typeof error.statusCode === 'number'
+        ? error.statusCode
+        : undefined;
+    if (statusCode === 429) {
       return reply.status(429).send({ error: 'RATE_LIMITED', requestId: request.id });
     }
     if (typeof error === 'object' && error !== null && 'validation' in error && error.validation) {
       return reply.status(400).send({ error: 'VALIDATION_ERROR', requestId: request.id });
+    }
+    // Client faults (oversized body, bad JSON, wrong content type) are not crashes.
+    if (statusCode !== undefined && statusCode >= 400 && statusCode < 500) {
+      const code =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        typeof error.code === 'string'
+          ? error.code
+          : 'BAD_REQUEST';
+      return reply
+        .status(statusCode)
+        .send({ error: statusCode === 413 ? 'PAYLOAD_TOO_LARGE' : code, requestId: request.id });
     }
     request.log.error({ err: error }, 'request failed');
     return reply.status(500).send({ error: 'INTERNAL_ERROR', requestId: request.id });
@@ -235,13 +272,29 @@ export async function buildServer(
     await app.register(fastifyStatic, {
       root: spaRoot,
       wildcard: false,
+      // '/' is rendered below with social preview tags instead of the bare index.
+      index: false,
       maxAge: '30d',
       immutable: true,
       setHeaders(reply, filePath) {
         if (basename(filePath) === 'index.html') {
           reply.header('cache-control', 'no-cache');
+          return;
+        }
+        // Only Vite's content-hashed /assets are immutable; media and thumbs keep their names.
+        if (relative(spaRoot, filePath).split(/[\\/]/)[0] !== 'assets') {
+          reply.header('cache-control', 'public, max-age=3600');
         }
       },
+    });
+    app.get('/', async (request, reply) => {
+      const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);
+      return reply
+        .header('cache-control', 'no-cache')
+        .header('x-content-type-options', 'nosniff')
+        .header('referrer-policy', 'strict-origin-when-cross-origin')
+        .type('text/html; charset=utf-8')
+        .send(renderHomeIndexHtml(spaIndex, publicOrigin));
     });
     app.get('/agents', async (request, reply) => {
       const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);
@@ -263,44 +316,29 @@ export async function buildServer(
     });
     app.get<{
       Params: { slug: string };
-    }>(
-      '/shops/:slug',
-      {
-        schema: {
-          params: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['slug'],
-            properties: {
-              slug: {
-                type: 'string',
-                minLength: 1,
-                maxLength: 64,
-                pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
-              },
-            },
-          },
-        },
-      },
-      async (request, reply) => {
-        const query = parsePublicCatalogQuery(
-          { limit: '48' },
-          `shop:${request.params.slug}`,
-          config.CHARTER_CURSOR_SECRET,
-        );
-        const shop = await tenantRepository.searchPublicCatalog(request.params.slug, query);
-        if (!shop) {
-          return reply.status(404).type('text/html; charset=utf-8').send(spaIndex);
-        }
-        const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);
-        return reply
-          .header('cache-control', 'public, max-age=60')
-          .header('x-content-type-options', 'nosniff')
-          .header('referrer-policy', 'strict-origin-when-cross-origin')
-          .type('text/html; charset=utf-8')
-          .send(renderShopIndexHtml(spaIndex, publicOrigin, shop));
-      },
-    );
+    }>('/shops/:slug', async (request, reply) => {
+      const { slug } = request.params;
+      // A mistyped link (/shops/Northstar) gets the SPA's 404 page, not a JSON error.
+      if (slug.length > 64 || !PUBLIC_SHOP_SLUG.test(slug)) {
+        return reply.status(404).type('text/html; charset=utf-8').send(spaIndex);
+      }
+      const query = parsePublicCatalogQuery(
+        { limit: '48' },
+        `shop:${slug}`,
+        config.CHARTER_CURSOR_SECRET,
+      );
+      const shop = await tenantRepository.searchPublicCatalog(slug, query);
+      if (!shop) {
+        return reply.status(404).type('text/html; charset=utf-8').send(spaIndex);
+      }
+      const publicOrigin = requestPublicOrigin(request.protocol, request.headers.host);
+      return reply
+        .header('cache-control', 'public, max-age=60')
+        .header('x-content-type-options', 'nosniff')
+        .header('referrer-policy', 'strict-origin-when-cross-origin')
+        .type('text/html; charset=utf-8')
+        .send(renderShopIndexHtml(spaIndex, publicOrigin, shop));
+    });
   }
   app.setNotFoundHandler((request, reply) => {
     if (spaRoot && isSpaNavigation(request.method, request.url)) {
@@ -363,4 +401,10 @@ const isMain = process.argv[1]?.includes('server');
 if (isMain) {
   const { app, config } = await buildServer();
   await app.listen({ host: '0.0.0.0', port: config.PORT });
+  // Containers stop with SIGTERM; node as PID 1 ignores it unless we handle it.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void app.close().finally(() => process.exit(0));
+    });
+  }
 }

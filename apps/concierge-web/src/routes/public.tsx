@@ -11,6 +11,7 @@ import { ApiError } from '../api';
 import { useAuth } from '../auth';
 import { DEFAULT_SIGNED_IN_PATH } from '../buyer-session';
 import { CatalogThumb } from '../CatalogThumb';
+import { useDocumentTitle } from '../document-title';
 import {
   buyerIntentPath,
   filterUrlSearch,
@@ -47,7 +48,7 @@ export function HomePage() {
         </h1>
         <p className="home-lede">One conversation. A frozen total. Pay on Razorpay.</p>
         <div className="editorial-actions">
-          <Link className="primary-link" to="/auth/sign-in">
+          <Link className="primary-link" to="/auth/sign-up">
             Start shopping
           </Link>
           <Link className="quiet-link" to="/shops">
@@ -65,7 +66,7 @@ function useAgentsSeo() {
       managedHeadValues({
         title: 'Agents and MCP — Charter',
         description:
-          'Honest MCP and HTTP discovery for AI buyers. Same catalog and checkout as Concierge. Not a UCP, ACP, AP2, Gemini, or Alexa certification.',
+          'A Streamable HTTP MCP server and HTTP discovery for AI buyers. Same catalog and checkout as Concierge. Razorpay test mode; not a UCP, ACP, AP2, Gemini, or Alexa certification.',
         canonical: `${window.location.origin}/agents`,
         type: 'website',
       }),
@@ -76,6 +77,7 @@ function useAgentsSeo() {
 
 export function AgentsPage() {
   useAgentsSeo();
+  const mcpUrl = `${window.location.origin}/mcp`;
   return (
     <section className="directory-page agents-page">
       <header className="editorial-head fade">
@@ -86,13 +88,31 @@ export function AgentsPage() {
           </h1>
         </div>
         <p>
-          An external agent uses the same first-party tools as Concierge. Discovery is honest:
-          Razorpay test mode, no live settlement, not certified for UCP, ACP, AP2, Gemini, or
-          Alexa.
+          An external agent uses the same first-party tools as Concierge through a real MCP server.
+          Razorpay test mode, no live settlement, not certified for UCP, ACP, AP2, Gemini, or Alexa.
         </p>
       </header>
 
       <dl className="agent-endpoints">
+        <div>
+          <dt>MCP server</dt>
+          <dd>
+            <code>POST /mcp</code> — MCP Streamable HTTP (JSON-RPC 2.0),{' '}
+            {CHARTER_COMMERCE_TOOLS.length} tools
+          </dd>
+        </div>
+        <div>
+          <dt>Connect</dt>
+          <dd>
+            <code>{mcpUrl}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Buyer auth</dt>
+          <dd>
+            <code>Authorization: Bearer &lt;Supabase access token&gt;</code>
+          </dd>
+        </div>
         <div>
           <dt>Discovery</dt>
           <dd>
@@ -106,15 +126,9 @@ export function AgentsPage() {
           </dd>
         </div>
         <div>
-          <dt>MCP tools</dt>
+          <dt>Plain HTTP adapter</dt>
           <dd>
-            <a href="/mcp/tools">GET /mcp/tools</a>
-          </dd>
-        </div>
-        <div>
-          <dt>MCP call</dt>
-          <dd>
-            <code>POST /mcp/call</code>
+            <a href="/mcp/tools">GET /mcp/tools</a> · <code>POST /mcp/call</code>
           </dd>
         </div>
       </dl>
@@ -123,18 +137,28 @@ export function AgentsPage() {
         <article>
           <h2>How an agent transacts</h2>
           <ol className="agent-steps">
-            <li>Read discovery. Check <code>liveSettlement: false</code> and <code>notCertified</code>.</li>
             <li>
-              Search a published shop with <code>catalog.search</code> (no login). Example slug:{' '}
+              Point any MCP client at <code>{mcpUrl}</code>, then call <code>initialize</code> and{' '}
+              <code>tools/list</code>.
+            </li>
+            <li>
+              Read discovery. Check <code>liveSettlement: false</code> and <code>notCertified</code>
+              .
+            </li>
+            <li>
+              Search a published shop with <code>catalog_search</code> (no login). Example slug:{' '}
               <code>northstar</code>.
             </li>
-            <li>Sign in as a buyer. Send that JWT on mutating tools.</li>
             <li>
-              Create a cart, freeze a quote, then <code>checkout.complete</code>. Card data never
+              Sign in as a buyer and copy an access token from Account. Send it as{' '}
+              <code>Authorization: Bearer</code> on buyer tools.
+            </li>
+            <li>
+              Create a cart, freeze a quote, then <code>checkout_complete</code>. Card data never
               enters Charter — hosted Razorpay Checkout is the credential boundary.
             </li>
             <li>
-              After a failed pay, <code>checkout.resume</code> reconciles the Order. An unchanged
+              After a failed pay, <code>checkout_resume</code> reconciles the Order. An unchanged
               quote retries the same Razorpay Order.
             </li>
           </ol>
@@ -147,9 +171,7 @@ export function AgentsPage() {
               Caller-supplied <code>path</code> is ignored. Tools resolve only first-party{' '}
               <code>/api</code>.
             </li>
-            <li>
-              Not certified: {CHARTER_COMMERCE_NOT_CERTIFIED.join(', ')}.
-            </li>
+            <li>Not certified: {CHARTER_COMMERCE_NOT_CERTIFIED.join(', ')}.</li>
             <li>
               Voice Talk is the spoken human door. MCP is the machine door. Both use the same
               commerce core.
@@ -161,7 +183,7 @@ export function AgentsPage() {
       <h2>Tools</h2>
       <div className="agent-tools-wrap">
         <table className="agent-tools">
-          <caption>MCP tools map to first-party HTTP. Mutations require a buyer JWT.</caption>
+          <caption>MCP tools map to first-party HTTP. Buyer tools need a bearer token.</caption>
           <thead>
             <tr>
               <th scope="col">Tool</th>
@@ -173,9 +195,9 @@ export function AgentsPage() {
             {CHARTER_COMMERCE_TOOLS.map((tool) => (
               <tr key={tool.name}>
                 <th scope="row">
-                  <code>{tool.name}</code>
+                  <code>{tool.name.replace(/\./g, '_')}</code>
                 </th>
-                <td>{tool.auth === 'bearer' ? 'Buyer JWT' : 'Public'}</td>
+                <td>{tool.auth === 'bearer' ? 'Buyer token' : 'Public'}</td>
                 <td>{tool.description}</td>
               </tr>
             ))}
@@ -187,8 +209,8 @@ export function AgentsPage() {
         <Link className="primary-link" to="/shops">
           Browse shops an agent can bind
         </Link>
-        <Link className="quiet-link" to="/auth/sign-in">
-          Sign in to get a buyer JWT
+        <Link className="quiet-link" to="/auth/sign-in?next=/account">
+          Get a buyer token for agents
         </Link>
       </div>
     </section>
@@ -415,7 +437,9 @@ function ShopCard({ shop }: { shop: PublicShop }) {
       <dl className="shop-card-facts">
         <div>
           <dt>Catalog</dt>
-          <dd>{shop.itemCount} variants</dd>
+          <dd>
+            {shop.itemCount} {shop.itemCount === 1 ? 'product' : 'products'}
+          </dd>
         </div>
         <div>
           <dt>Stock</dt>
@@ -753,6 +777,7 @@ export function ShopPage() {
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
   const loadMoreController = useRef<AbortController | null>(null);
+  const resultSlug = useRef(slug);
   useShopSeo(result);
 
   useEffect(() => {
@@ -760,7 +785,11 @@ export function ShopPage() {
     const controller = new AbortController();
     loadMoreController.current?.abort();
     loadMoreController.current = null;
-    setResult(null);
+    // Keep the current catalog on screen while a filter refetches; only a new shop starts blank.
+    if (resultSlug.current !== slug) {
+      resultSlug.current = slug;
+      setResult(null);
+    }
     setState('loading');
     setLoadingMore(false);
     setLoadMoreError(false);
@@ -788,7 +817,16 @@ export function ShopPage() {
 
   if (state === 'missing') {
     return (
-      <RouteStatus code="404" title="Shop not found" body="This public shop link is unavailable." />
+      <RouteStatus
+        code="404"
+        title="Shop not found"
+        body="This shop link is unavailable. The shop may be unpublished, or the link mistyped."
+        action={
+          <Link className="primary-link" to="/shops">
+            Browse shops
+          </Link>
+        }
+      />
     );
   }
   if (state === 'loading' && !result) {
@@ -804,9 +842,14 @@ export function ShopPage() {
         <h1 data-route-heading tabIndex={-1}>
           We couldn’t open this shop
         </h1>
-        <button type="button" onClick={() => setRetry((value) => value + 1)}>
-          Try again
-        </button>
+        <div className="editorial-actions">
+          <button type="button" onClick={() => setRetry((value) => value + 1)}>
+            Try again
+          </button>
+          <Link className="quiet-link" to="/shops">
+            Browse shops
+          </Link>
+        </div>
       </div>
     );
   }
@@ -817,7 +860,8 @@ export function ShopPage() {
   const apply = (next: ShopFilterParams) => setSearchParams(filterUrlSearch(next));
   const reset = () => setSearchParams(new URLSearchParams());
   const loadMore = async () => {
-    if (!result.nextCursor || loadingMore) {
+    // While filters refetch, the visible cursor belongs to the previous query.
+    if (!result.nextCursor || loadingMore || state === 'loading') {
       return;
     }
     const requestGeneration = generation.current;
@@ -865,7 +909,7 @@ export function ShopPage() {
         <p>{result.shop.blurb}</p>
         {result.shop.refundPolicy ? (
           <p className="storefront-refund">
-            <strong>Refund copy</strong> {result.shop.refundPolicy}
+            <strong>Refund policy</strong> {result.shop.refundPolicy}
           </p>
         ) : (
           <p className="storefront-refund">This shop has not published a refund policy.</p>
@@ -874,7 +918,7 @@ export function ShopPage() {
           <Link className="primary-link" to={`/buyer/${result.shop.slug}`}>
             Open Concierge
           </Link>
-          <p>Catalog below is optional browse. Buy opens Concierge already in context.</p>
+          <p>Browse below, or tap Buy to continue in Concierge with that item.</p>
         </div>
       </header>
       <CatalogFilters
@@ -886,9 +930,27 @@ export function ShopPage() {
         onReset={reset}
       />
       <p className="result-count" role="status" aria-live="polite">
-        {result.total} {result.total === 1 ? 'product' : 'products'}
+        {state === 'loading'
+          ? 'Updating products…'
+          : `${result.total} ${result.total === 1 ? 'product' : 'products'}`}
       </p>
-      {result.total === 0 ? (
+      {state === 'error' ? (
+        <p className="load-more-error" role="alert">
+          Those filters could not be applied.{' '}
+          <button type="button" onClick={() => setRetry((value) => value + 1)}>
+            Try again
+          </button>
+        </p>
+      ) : null}
+      {result.total === 0 && !filterKey ? (
+        <div className="directory-message directory-empty">
+          <h2>This shop hasn’t listed products yet.</h2>
+          <p>Check back soon, or browse another shop.</p>
+          <Link className="quiet-link" to="/shops">
+            Browse shops
+          </Link>
+        </div>
+      ) : result.total === 0 ? (
         <div className="directory-message directory-empty">
           <h2>No matching products</h2>
           <p>Try a different search or reset the catalog filters.</p>
@@ -897,7 +959,10 @@ export function ShopPage() {
           </button>
         </div>
       ) : (
-        <div className="product-grid">
+        <div
+          className={state === 'loading' ? 'product-grid is-refreshing' : 'product-grid'}
+          aria-busy={state === 'loading'}
+        >
           {result.items.map((item) => {
             const inStock = item.availableStock > 0;
             return (
@@ -906,6 +971,7 @@ export function ShopPage() {
                   <span>{item.category?.title ?? 'Uncategorized'}</span>
                   <span>{item.material.charAt(0).toUpperCase() + item.material.slice(1)}</span>
                 </div>
+                <CatalogThumb className="catalog-card-thumb" label={item.title} seed={item.sku} />
                 <h2>{item.title}</h2>
                 <p className="catalog-price">{item.priceDisplay}</p>
                 <p className={inStock ? 'stock-copy' : 'stock-copy out'}>
@@ -932,7 +998,11 @@ export function ShopPage() {
       )}
       {result.nextCursor ? (
         <div className="load-more" aria-live="polite">
-          <button type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+          <button
+            type="button"
+            disabled={loadingMore || state === 'loading'}
+            onClick={() => void loadMore()}
+          >
             {loadingMore ? 'Loading more products…' : 'Load more products'}
           </button>
         </div>
@@ -955,11 +1025,17 @@ export function CanonicalShopRedirect() {
 }
 
 export function NotFoundPage() {
+  useDocumentTitle('Page not found — Charter');
   return (
     <RouteStatus
       code="404"
       title="Page not found"
       body="That Charter route does not exist. The shop directory is still available."
+      action={
+        <Link className="primary-link" to="/shops">
+          Browse shops
+        </Link>
+      }
     />
   );
 }

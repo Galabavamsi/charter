@@ -28,6 +28,16 @@ function escapeXml(value: string): string {
   return escapeHtml(value);
 }
 
+// Drop the static index.html title and description so the injected tags are the only ones.
+function injectHead(indexHtml: string, tags: string): string {
+  const withoutDefaults = indexHtml
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '')
+    .replace(/<meta\b[^>]*\bname=["']description["'][^>]*>\s*/i, '');
+  return /<\/head>/i.test(withoutDefaults)
+    ? withoutDefaults.replace(/<\/head>/i, `${tags}\n</head>`)
+    : `${withoutDefaults}\n${tags}`;
+}
+
 function safeJson(value: unknown): string {
   return JSON.stringify(value)
     .replaceAll('<', '\\u003c')
@@ -67,17 +77,34 @@ export function renderShopIndexHtml(
       }),
     )}</script>`,
   ].join('\n');
-  const withoutTitle = indexHtml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '');
-  return /<\/head>/i.test(withoutTitle)
-    ? withoutTitle.replace(/<\/head>/i, `${tags}\n</head>`)
-    : `${withoutTitle}\n${tags}`;
+  return injectHead(indexHtml, tags);
+}
+
+export function renderHomeIndexHtml(indexHtml: string, publicOrigin: string): string {
+  const canonical = `${publicOrigin}/`;
+  const title = 'Charter — Shop by talking';
+  const description =
+    'Shop by talking. One conversation, a frozen total, pay on Razorpay. A portfolio demo of bounded agent commerce with an MCP server for AI buyers.';
+  const image = `${publicOrigin}/media/landing-poster.jpg`;
+  const tags = [
+    `<title data-charter-head="title">${escapeHtml(title)}</title>`,
+    `<meta data-charter-head="description" name="description" content="${escapeHtml(description)}">`,
+    `<link data-charter-head="canonical" rel="canonical" href="${escapeHtml(canonical)}">`,
+    '<meta data-charter-head="og:type" property="og:type" content="website">',
+    `<meta data-charter-head="og:title" property="og:title" content="${escapeHtml(title)}">`,
+    `<meta data-charter-head="og:description" property="og:description" content="${escapeHtml(description)}">`,
+    `<meta data-charter-head="og:url" property="og:url" content="${escapeHtml(canonical)}">`,
+    `<meta data-charter-head="og:image" property="og:image" content="${escapeHtml(image)}">`,
+    '<meta data-charter-head="twitter:card" name="twitter:card" content="summary_large_image">',
+  ].join('\n');
+  return injectHead(indexHtml, tags);
 }
 
 export function renderAgentsIndexHtml(indexHtml: string, publicOrigin: string): string {
   const canonical = `${publicOrigin}/agents`;
   const title = 'Agents and MCP — Charter';
   const description =
-    'Honest MCP and HTTP discovery for AI buyers. Same catalog and checkout as Concierge. Not a UCP, ACP, AP2, Gemini, or Alexa certification.';
+    'A Streamable HTTP MCP server and HTTP discovery for AI buyers. Same catalog and checkout as Concierge. Razorpay test mode; not a UCP, ACP, AP2, Gemini, or Alexa certification.';
   const tags = [
     `<title data-charter-head="title">${escapeHtml(title)}</title>`,
     `<meta data-charter-head="description" name="description" content="${escapeHtml(description)}">`,
@@ -87,10 +114,7 @@ export function renderAgentsIndexHtml(indexHtml: string, publicOrigin: string): 
     `<meta data-charter-head="og:description" property="og:description" content="${escapeHtml(description)}">`,
     `<meta data-charter-head="og:url" property="og:url" content="${escapeHtml(canonical)}">`,
   ].join('\n');
-  const withoutTitle = indexHtml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '');
-  return /<\/head>/i.test(withoutTitle)
-    ? withoutTitle.replace(/<\/head>/i, `${tags}\n</head>`)
-    : `${withoutTitle}\n${tags}`;
+  return injectHead(indexHtml, tags);
 }
 
 export function renderDirectoryIndexHtml(indexHtml: string, publicOrigin: string): string {
@@ -106,10 +130,7 @@ export function renderDirectoryIndexHtml(indexHtml: string, publicOrigin: string
     `<meta data-charter-head="og:description" property="og:description" content="${escapeHtml(description)}">`,
     `<meta data-charter-head="og:url" property="og:url" content="${escapeHtml(canonical)}">`,
   ].join('\n');
-  const withoutTitle = indexHtml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '');
-  return /<\/head>/i.test(withoutTitle)
-    ? withoutTitle.replace(/<\/head>/i, `${tags}\n</head>`)
-    : `${withoutTitle}\n${tags}`;
+  return injectHead(indexHtml, tags);
 }
 
 export function robotsText(publicOrigin: string): string {

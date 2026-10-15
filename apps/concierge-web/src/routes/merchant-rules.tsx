@@ -33,6 +33,12 @@ type OfferDraft = {
 const DECIMAL_INR = /^(0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
 const MAX_REDEMPTIONS = /^(0|[1-9]\d{0,6})$/;
 
+const PREVIEW_REASON: Record<string, string> = {
+  WITHIN_POLICY: 'Allowed',
+  PRODUCT_MATERIAL_FORBIDDEN: 'Blocked · material forbidden',
+  HARD_CAP_EXCEEDED: 'Blocked · price above hard cap',
+};
+
 function decimalFromMinor(value: string): string {
   const minor = BigInt(value);
   return `${minor / 100n}.${(minor % 100n).toString().padStart(2, '0')}`;
@@ -121,6 +127,10 @@ export function MerchantRulesPage() {
     const decimal = DECIMAL_INR;
     if (!decimal.test(hardCap) || !decimal.test(autonomousCap)) {
       setNotice({ kind: 'error', text: 'Caps must use INR with no more than 2 decimal places.' });
+      return;
+    }
+    if (BigInt(minorFromDecimal(autonomousCap)) > BigInt(minorFromDecimal(hardCap))) {
+      setNotice({ kind: 'error', text: 'The autonomous cap must not exceed the hard cap.' });
       return;
     }
     if (
@@ -440,7 +450,7 @@ export function MerchantRulesPage() {
               <li key={item.sku}>
                 <code>{item.sku}</code>
                 <RecordStatus
-                  label={`${item.outcome} · ${item.reason}`}
+                  label={PREVIEW_REASON[item.reason] ?? `${item.outcome} · ${item.reason}`}
                   tone={item.outcome === 'allow' ? 'ok' : 'danger'}
                 />
               </li>

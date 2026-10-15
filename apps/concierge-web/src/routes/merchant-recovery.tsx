@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApi } from '../account';
+import { ApiError } from '../api';
 import {
   FormNotice,
   MerchantEmpty,
@@ -19,7 +20,7 @@ import {
 const BLOCKED_REASON: Record<string, string> = {
   PAYMENT_CAPTURED: 'Payment already captured',
   PAYMENT_AUTHORIZED: 'Awaiting capture. Recovery is paused.',
-  RECONCILIATION_REQUIRED: 'Payment not confirmed. Reconcile before sending.',
+  RECONCILIATION_REQUIRED: 'Payment not confirmed. Sending will reconcile with Razorpay first.',
   QUOTE_CHANGED: 'Frozen quote facts changed. Recovery is blocked.',
   CHECKOUT_KILLED: 'Checkout or recovery is stopped',
   SUPPRESSED: 'Contact is suppressed',
@@ -31,6 +32,8 @@ const BLOCKED_REASON: Record<string, string> = {
   RETRY_LIMIT_REACHED: 'Recovery attempt limit reached',
   NOT_CONFIGURED: 'Recovery email provider is unavailable',
   PAYMENT_REFUNDED: 'Payment was refunded. Recovery is blocked.',
+  CHECKOUT_NOT_FOUND: 'The checkout record is no longer available.',
+  RECOVERY_BLOCKED: 'Recovery is blocked for this checkout.',
 };
 
 function blockedCopy(reason: string | null): string {
@@ -65,7 +68,10 @@ export function MerchantRecoveryPage() {
       setSent((current) => new Set(current).add(checkoutId));
       setNotice({ kind: 'success', text: 'Recovery email sent' });
     } catch (cause) {
-      setNotice({ kind: 'error', text: merchantErrorMessage(cause) });
+      const blocked = cause instanceof ApiError ? BLOCKED_REASON[cause.code] : undefined;
+      setNotice({ kind: 'error', text: blocked ?? merchantErrorMessage(cause) });
+      // The record's canSend / blockedReason may have changed; show the current state.
+      void resource.reload();
     } finally {
       setSending(null);
     }
@@ -110,6 +116,9 @@ export function MerchantRecoveryPage() {
         <div className="recovery-records" role="list" aria-label="Recovery queue">
           {resource.items.map((record) => {
             const wasSent = sent.has(record.checkoutId);
+            // The API reconciles with Razorpay before sending these, so offer the action.
+            const reconcileFirst =
+              !record.canSend && record.blockedReason === 'RECONCILIATION_REQUIRED';
             return (
               <article key={record.checkoutId} className="recovery-record" role="listitem">
                 <header>
@@ -154,13 +163,17 @@ export function MerchantRecoveryPage() {
                     <span>{blockedCopy(record.blockedReason)}</span>
                   </p>
                 ) : null}
-                {record.canSend && !wasSent ? (
+                {(record.canSend || reconcileFirst) && !wasSent ? (
                   <button
                     type="button"
                     disabled={sending === record.checkoutId}
                     onClick={() => void send(record.checkoutId)}
                   >
-                    {sending === record.checkoutId ? 'Reserving send…' : 'Send recovery email'}
+                    {sending === record.checkoutId
+                      ? 'Reserving send…'
+                      : reconcileFirst
+                        ? 'Reconcile and send'
+                        : 'Send recovery email'}
                   </button>
                 ) : null}
                 <small>

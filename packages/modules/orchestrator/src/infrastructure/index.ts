@@ -1,5 +1,5 @@
-export { createFireworksClient } from './fireworks.js';
-export type { FireworksClient } from './fireworks.js';
+export { createFireworksClient, stripThinking } from './fireworks.js';
+export type { FireworksClient, ModelTurnContext } from './fireworks.js';
 export {
   createResilientModelClient,
   createStructuredFallbackClient,

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest';
-import { conciergeShopQuery, directoryShopSearchPath, isLexicalSmallTalk } from './shops';
+import {
+  conciergeShopQuery,
+  directoryShopSearchPath,
+  isLexicalSmallTalk,
+  publicCatalogSearch,
+  shopFilters,
+} from './shops';
 
 describe('concierge shop directory query', () => {
   it('sends content tokens only — no category alias map', () => {
@@ -19,5 +25,17 @@ describe('concierge shop directory query', () => {
     expect(isLexicalSmallTalk('hi')).toBe(true);
     expect(conciergeShopQuery('hi')).toEqual({ q: '' });
     expect(directoryShopSearchPath('hi')).toBe('/v1/shops?sort=rating&limit=8');
+  });
+});
+
+describe('public catalog search params', () => {
+  it('asks for relevance explicitly when searching, since the directory defaults to rating', () => {
+    expect(publicCatalogSearch(shopFilters(new URLSearchParams('q=coffee'))).toString()).toBe(
+      'q=coffee&sort=relevance',
+    );
+    expect(publicCatalogSearch(shopFilters(new URLSearchParams())).toString()).toBe('');
+    expect(publicCatalogSearch(shopFilters(new URLSearchParams('sort=name'))).toString()).toBe(
+      'sort=name',
+    );
   });
 });

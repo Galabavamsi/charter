@@ -154,14 +154,14 @@ max_indexes = 5
 
 [auth]
 enabled = true
-# Local stack only. Hosted Charter Site URL is the Railway origin (Management API), not this value.
+# Local stack only. Hosted Charter Site URL is https://charter.humanslop.in (dashboard), not this value.
 # Do not `supabase config push` this file as-is — it would reset hosted emails to localhost.
 site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
-  "https://core-api-production-087b.up.railway.app/**",
+  "https://charter.humanslop.in/**",
   "http://127.0.0.1:3000/**",
   "http://localhost:3000/**",
 ]

@@ -16,6 +16,8 @@ const CHECKOUT_HANDOFF_FIELDS = [
   'description',
   'receipt',
   'copy',
+  // 'SETTLED' tells the voice poll to show the receipt instead of reopening Razorpay.
+  'status',
 ] as const;
 const CHECKOUT_FREE_TEXT_FIELDS = new Set<string>(['name', 'description', 'copy']);
 

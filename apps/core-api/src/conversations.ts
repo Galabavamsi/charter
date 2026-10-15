@@ -27,7 +27,6 @@ import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '@charter/config';
 import type { PersistedConversationSnapshot, TenantRepository } from './tenant/repository.js';
 import { requireBuyer, requireBuyerPreValidation } from './auth/context.js';
-import { requireOwnedResource } from './auth/guards.js';
 import { hydrateCatalogCache } from './tenant/catalog-cache.js';
 import {
   hydratePersistedConversation,
@@ -35,6 +34,7 @@ import {
   reconcilePersistedConversationState,
 } from './tenant/conversation-state.js';
 import { safeErrorCode } from './http-errors.js';
+import { DAILY_LIMIT_REACHED, turnQuotaFor } from './turn-quota.js';
 
 const SHOP_SLUG_SCHEMA = {
   type: 'string',
@@ -164,6 +164,21 @@ function hooksFor(
             const priorId = prior?.id;
             try {
               const { session } = await startCheckout(quoteId, razorpay);
+              if (session.status === 'SETTLED') {
+                // Reconciliation found the capture (e.g. no webhook reached this host):
+                // write the ledger once and hand back a receipt, never a pay window.
+                await persist?.rememberCapture(session);
+                return {
+                  checkoutId: session.id,
+                  orderId: session.razorpayOrderId,
+                  amount: session.amountMinor,
+                  currency: session.currency,
+                  status: session.status,
+                  copy: session.copy,
+                  retryAllowed: false,
+                  reconciliationOutcome: 'captured',
+                };
+              }
               await persist?.saveCheckout?.(session);
               const retryAllowed =
                 (priorStatus === 'FAILED_PROVISIONAL' || priorStatus === 'RECONCILING') &&
@@ -179,6 +194,7 @@ function hooksFor(
                 description: 'Locked total',
                 receipt: session.receipt,
                 copy: session.copy,
+                status: session.status,
                 retryAllowed,
                 reconciliationOutcome: retryAllowed ? 'same_order_retry_safe' : undefined,
               };
@@ -407,14 +423,9 @@ export async function registerConversationRoutes(
       if (!shop) {
         return reply.status(404).send({ error: 'SHOP_UNKNOWN' });
       }
-      if (
-        !(await requireOwnedResource(request, reply, repository, {
-          kind: 'conversation',
-          tenantId: shop.tenantId,
-          resourceId: id,
-        }))
-      ) {
-        return;
+      if (!(await repository.canAccessResource('conversation', shop.tenantId, id, buyer.userId))) {
+        // Unknown or not this buyer's: either way the client should start a new chat.
+        return reply.status(404).send({ error: 'CONVERSATION_NOT_FOUND' });
       }
       let conversation = getConversation(id);
       if (!conversation) {
@@ -433,6 +444,15 @@ export async function registerConversationRoutes(
       }
       if (!conversation || conversation.tenantId !== shop.tenantId) {
         return reply.status(404).send({ error: 'CONVERSATION_NOT_FOUND' });
+      }
+      // After a restart the cart and quote live only in Postgres. Without this the
+      // snapshot says cart: null and the client wipes the buyer's saved picks.
+      if (
+        (conversation.cartId && !getCart(conversation.cartId)) ||
+        (conversation.quoteId && !getQuote(conversation.quoteId))
+      ) {
+        await hydrateCatalogCache(repository, shop);
+        await hydrateConversationMoney(conversation, persist);
       }
       const quote = conversationQuote(conversation);
       let checkout = conversation.pendingCheckout;
@@ -479,7 +499,7 @@ export async function registerConversationRoutes(
               maxLength: 64,
               pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
             },
-            text: { type: 'string', minLength: 1, maxLength: 8_000 },
+            text: { type: 'string', minLength: 1, maxLength: 1_000 },
           },
         },
       },
@@ -496,14 +516,11 @@ export async function registerConversationRoutes(
       if (!shop) {
         return reply.status(404).send({ error: 'SHOP_UNKNOWN' });
       }
-      const principal = await requireOwnedResource(request, reply, repository, {
-        kind: 'conversation',
-        tenantId: shop.tenantId,
-        resourceId: id,
-      });
-      if (!principal) {
-        return;
+      if (!(await repository.canAccessResource('conversation', shop.tenantId, id, buyer.userId))) {
+        // The client answers CONVERSATION_NOT_FOUND by starting a fresh chat.
+        return reply.status(404).send({ error: 'CONVERSATION_NOT_FOUND' });
       }
+      const principal = buyer;
       const base = await repository.loadConversation({
         id,
         tenantId: shop.tenantId,
@@ -519,12 +536,20 @@ export async function registerConversationRoutes(
       if (!base || !conversation || conversation.tenantId !== shop.tenantId) {
         return reply.status(404).send({ error: 'CONVERSATION_NOT_FOUND' });
       }
-      await hydrateCatalogCache(repository, shop);
-      await hydrateConversationMoney(conversation, persist);
       const { text } = body;
       if (!text?.trim()) {
         return reply.status(400).send({ error: 'TEXT_REQUIRED' });
       }
+      // Buy now / confirm-cart / pay turns are scripted (no model call), so a
+      // buyer at the cap can still finish checking out.
+      if (
+        !usesStructuredCheckout(text, Boolean(conversation.quoteId)) &&
+        !turnQuotaFor(config).take(principal.userId)
+      ) {
+        return reply.status(429).send({ error: DAILY_LIMIT_REACHED });
+      }
+      await hydrateCatalogCache(repository, shop);
+      await hydrateConversationMoney(conversation, persist);
       const hooks = hooksFor(config, razorpay, repository, principal.userId, persist, {
         requestId: request.id,
         tenantId: shop.tenantId,
@@ -556,6 +581,8 @@ export async function registerConversationRoutes(
             'FACTS_STALE',
             'OFFER_MARGIN_FLOOR',
             'CART_NOT_FOUND',
+            'CART_EMPTY',
+            'QUOTE_TOTAL_TOO_LOW',
             'QUOTE_NOT_FOUND',
             'SKU_UNKNOWN',
             'AUTHORITY_APPROVAL_REQUIRED',
@@ -603,7 +630,7 @@ export async function runConversationTurn(
   channel: 'text' | 'voice',
 ) {
   const client = createResilientModelClient(
-    config.FIREWORKS_API_KEY && !usesStructuredCheckout(text)
+    config.FIREWORKS_API_KEY && !usesStructuredCheckout(text, Boolean(conversation.quoteId))
       ? createFireworksClient(
           config.FIREWORKS_API_KEY,
           config.FIREWORKS_MODEL || FIREWORKS_DEFAULT_MODEL,

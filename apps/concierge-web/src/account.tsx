@@ -64,8 +64,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<ApiError | Error | null>(null);
   const generation = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
+  // The user whose account is currently shown as ready. A reload for that same user
+  // (token refresh, refresh() after a save) revalidates in place instead of clearing
+  // the account, so guarded merchant pages do not unmount and lose unsaved forms.
+  const readyUserId = useRef<string | null>(null);
   const sessionUserId = session?.user.id ?? null;
-  const sessionAccessToken = session?.accessToken ?? null;
 
   const load = useCallback(async () => {
     const requestGeneration = ++generation.current;
@@ -73,6 +76,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     activeRequest.current = null;
 
     if (!sessionUserId) {
+      readyUserId.current = null;
       setAccount(null);
       setAccountUserId(null);
       setError(null);
@@ -82,10 +86,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
     const controller = new AbortController();
     activeRequest.current = controller;
-    setAccount(null);
-    setAccountUserId(sessionUserId);
-    setStatus('loading');
-    setError(null);
+    const revalidating = readyUserId.current === sessionUserId;
+    if (!revalidating) {
+      readyUserId.current = null;
+      setAccount(null);
+      setAccountUserId(sessionUserId);
+      setStatus('loading');
+      setError(null);
+    }
     try {
       const next = await api<AccountProfile>('/v1/me', { signal: controller.signal });
       if (requestGeneration !== generation.current || controller.signal.aborted) {
@@ -94,12 +102,22 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       if (next.profile.userId !== sessionUserId) {
         throw new Error('ACCOUNT_IDENTITY_MISMATCH');
       }
+      readyUserId.current = sessionUserId;
       setAccount(next);
+      setError(null);
       setStatus('ready');
     } catch (cause) {
       if (requestGeneration !== generation.current || controller.signal.aborted) {
         return;
       }
+      const authFailure =
+        cause instanceof ApiError && (cause.status === 401 || cause.status === 403);
+      if (revalidating && !authFailure) {
+        // Keep the account we already showed; a transient refetch failure should not
+        // tear down the workspace.
+        return;
+      }
+      readyUserId.current = null;
       const normalized = cause instanceof Error ? cause : new Error('ACCOUNT_LOAD_FAILED');
       setAccount(null);
       setError(normalized);
@@ -111,7 +129,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             : 'error',
       );
     }
-  }, [api, authLoading, sessionAccessToken, sessionUserId]);
+  }, [api, authLoading, sessionUserId]);
 
   useEffect(() => {
     void load();

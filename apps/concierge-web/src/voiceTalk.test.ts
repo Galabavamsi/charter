@@ -1,30 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import {
+  accessTokenExpiresWithin,
   buildTalkAssistant,
   coalesceSameTurnText,
   isTalkSessionActive,
   resolveVoiceModelBase,
   startVoiceCall,
+  TALK_MAX_SECONDS,
   talkButtonLabel,
   upsertVoiceTranscript,
   joinVoiceFragments,
+  voiceCallEndCopy,
+  voiceEndedReason,
   voiceErrorCopy,
   voiceOrbState,
   voiceStatusCopy,
   voiceTranscriptFromMessage,
 } from './voiceTalk';
 
+function jwtWithExp(exp: number): string {
+  const payload = btoa(JSON.stringify({ sub: 'buyer', exp }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return `header.${payload}.signature`;
+}
+
 describe('talk voice UI state', () => {
   it('maps connecting, listening, speaking, and error into visible orb and copy', () => {
     expect(voiceOrbState('connecting')).toBe('connecting');
     expect(voiceOrbState('listening')).toBe('listening');
     expect(voiceOrbState('speaking')).toBe('composing');
-    expect(voiceOrbState('error')).toBe('solving');
+    expect(voiceOrbState('error')).toBeNull();
     expect(voiceOrbState('idle')).toBeNull();
     expect(voiceStatusCopy('connecting')).toBe('Connecting voice…');
     expect(voiceStatusCopy('listening')).toBe('Listening. Pause is fine — same tools as chat.');
     expect(voiceStatusCopy('speaking')).toBe('Speaking…');
-    expect(voiceStatusCopy('error', 'VAPI_NOT_READY')).toBe('VAPI_NOT_READY');
+    expect(voiceStatusCopy('error', 'VAPI_NOT_READY')).toMatch(/isn’t set up/);
+    expect(voiceStatusCopy('error', 'VOICE_PUBLIC_URL_MISSING')).toMatch(/isn’t set up/);
+    expect(voiceStatusCopy('error', 'VOICE_AUTH_REQUIRED')).toBe('Sign in again to use Talk.');
+    expect(voiceStatusCopy('error', null)).toBe('Voice dropped. Tap Talk to retry, or type.');
+    expect(voiceStatusCopy('error', 'Microphone permission denied. Allow the mic to Talk.')).toBe(
+      'Microphone permission denied. Allow the mic to Talk.',
+    );
     expect(talkButtonLabel('idle')).toBe('Talk');
     expect(talkButtonLabel('connecting')).toBe('Stop');
     expect(talkButtonLabel('listening')).toBe('Stop');
@@ -49,6 +67,15 @@ describe('talk voice UI state', () => {
         ],
       }),
     ).toMatch(/customer/);
+    expect(
+      voiceErrorCopy({
+        type: 'start-method-error',
+        error: { status: 403, error: { message: "Key doesn't allow transient assistant." } },
+      }),
+    ).toMatch(/Vapi key settings/);
+    expect(voiceErrorCopy({ error: { error: { message: 'Something else broke' } } })).toBe(
+      'Something else broke',
+    );
   });
 });
 
@@ -64,6 +91,29 @@ describe('talk voice connection helpers', () => {
       resolveVoiceModelBase('https://charter.example/api/v1/voice', 'http://localhost:5173'),
     ).toBe('https://charter.example/api/v1/voice');
     expect(resolveVoiceModelBase('', 'http://127.0.0.1:3000')).toBeNull();
+  });
+
+  it('explains why a Talk call ended and when the buyer token needs a refresh', () => {
+    expect(
+      voiceEndedReason({
+        type: 'status-update',
+        status: 'ended',
+        endedReason: 'exceeded-max-duration',
+      }),
+    ).toBe('exceeded-max-duration');
+    expect(voiceEndedReason({ type: 'transcript', endedReason: 'x' })).toBeNull();
+    expect(voiceCallEndCopy('exceeded-max-duration')).toBe(
+      'Talk sessions end after 3 minutes. Tap Talk to keep going.',
+    );
+    expect(voiceCallEndCopy(null)).toBe('Voice stopped.');
+    const now = Date.UTC(2026, 9, 15);
+    expect(accessTokenExpiresWithin(jwtWithExp(now / 1000 + 120), TALK_MAX_SECONDS + 60, now)).toBe(
+      true,
+    );
+    expect(
+      accessTokenExpiresWithin(jwtWithExp(now / 1000 + 3600), TALK_MAX_SECONDS + 60, now),
+    ).toBe(false);
+    expect(accessTokenExpiresWithin('not-a-jwt', 240, now)).toBe(false);
   });
 
   it('times out a hung Vapi start', async () => {
@@ -113,6 +163,39 @@ describe('talk transcript upsert', () => {
       text: 'Pay **₹2,347.00** when you are ready.',
       source: 'voice',
     });
+    expect(
+      voiceTranscriptFromMessage({
+        type: 'transcript',
+        role: 'assistant',
+        transcriptType: 'final',
+        transcript: 'Mm.',
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a hold reply out of the thread so split user fragments merge', () => {
+    const first = voiceTranscriptFromMessage({
+      type: 'transcript',
+      role: 'user',
+      transcriptType: 'final',
+      transcript: 'Add the',
+    });
+    const hold = voiceTranscriptFromMessage({
+      type: 'transcript',
+      role: 'assistant',
+      transcriptType: 'final',
+      transcript: 'Mm.',
+    });
+    const second = voiceTranscriptFromMessage({
+      type: 'transcript',
+      role: 'user',
+      transcriptType: 'final',
+      transcript: 'steel travel press',
+    });
+    expect(hold).toBeNull();
+    const merged = upsertVoiceTranscript(upsertVoiceTranscript([], first!, 1_000), second!, 3_000);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ role: 'you', text: 'Add the steel travel press' });
   });
 
   it('replaces a growing same-turn voice bubble and appends a new turn', () => {
@@ -283,7 +366,14 @@ describe('talk assistant session config', () => {
       'Charter Concierge for Northstar Travel Coffee. What do you need?',
     );
     expect(assistant.firstMessageInterruptionsEnabled).toBe(true);
-    expect(assistant.transcriber).toEqual({ provider: 'vapi', language: 'en' });
+    expect(assistant.transcriber).toEqual({
+      provider: 'deepgram',
+      model: 'nova-3',
+      language: 'en-IN',
+      fallbackPlan: { transcribers: [{ provider: 'vapi', language: 'en' }] },
+    });
+    expect(assistant.maxDurationSeconds).toBe(180);
+    expect(assistant.silenceTimeoutSeconds).toBe(30);
     expect(assistant.startSpeakingPlan).toMatchObject({
       waitSeconds: 0.55,
       smartEndpointingPlan: { provider: 'livekit' },
@@ -310,7 +400,12 @@ describe('talk assistant session config', () => {
       { provider: 'custom-llm', apiKey: 'buyer-access-token' },
     ]);
     expect(assistant.metadata).toEqual({ shopSlug: 'northstar' });
-    expect(assistant.voice).toEqual({ provider: 'vapi', voiceId: 'Elliot' });
+    expect(assistant.voice).toEqual({
+      provider: 'vapi',
+      voiceId: 'Naina',
+      version: 2,
+    });
+    expect(assistant.voice).not.toHaveProperty('fallbackPlan');
     expect(JSON.stringify(assistant.model)).not.toContain('stream:true');
   });
 });
