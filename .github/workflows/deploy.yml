@@ -1,0 +1,105 @@
+name: deploy
+
+# ci.yml calls this after `check` passes on a push to main. It can also be run by hand on main
+# (Actions > deploy > Run workflow). The AWS role only trusts OIDC tokens for refs/heads/main.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ROLE_ARN: arn:aws:iam::301745146083:role/charter-github-deploy
+  ECR_REPOSITORY: charter
+  SERVICE_NAME: charter
+  CONTAINER_NAME: app
+  PUBLIC_URL: https://charter.humanslop.in
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # One deploy at a time. A newer queued run replaces an older queued one.
+    concurrency:
+      group: charter-lightsail
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Deploys are serialized, so checking here keeps an older commit whose CI finished late
+      # from replacing a newer one that is already live.
+      - name: Check this commit is still the tip of main
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main is at ${tip::7}; its own run deploys it, so ${GITHUB_SHA::7} is skipped"
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        if: steps.tip.outputs.latest == 'true'
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: charter-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Masks every runtime secret for the rest of the job and reads the public Supabase URL and
+      # publishable key that Vite bakes into the SPA. Nothing about the environment lives in GitHub.
+      - name: Read the live deployment
+        id: live
+        if: steps.tip.outputs.latest == 'true'
+        run: node .github/scripts/lightsail-deploy.mjs prepare
+
+      - name: Log in to ECR
+        id: ecr
+        if: steps.tip.outputs.latest == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.tip.outputs.latest == 'true'
+
+      - name: Pick the image tag
+        id: image
+        if: steps.tip.outputs.latest == 'true'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: echo "ref=${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the linux/amd64 image
+        if: steps.tip.outputs.latest == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # A single plain manifest per deploy, so the ECR "keep last 5 images" rule counts deploys.
+          provenance: false
+          sbom: false
+          tags: ${{ steps.image.outputs.ref }}
+          build-args: |
+            VITE_SUPABASE_URL=${{ steps.live.outputs.vite_supabase_url }}
+            VITE_SUPABASE_PUBLISHABLE_KEY=${{ steps.live.outputs.vite_supabase_publishable_key }}
+          cache-from: type=gha,scope=charter
+          cache-to: type=gha,mode=max,scope=charter
+
+      # Copies the live deployment, swaps the image, waits for ACTIVE. A deployment that fails its
+      # health checks never takes traffic: Lightsail keeps the previous version serving.
+      - name: Deploy to Lightsail
+        if: steps.tip.outputs.latest == 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.ref }}
+        run: node .github/scripts/lightsail-deploy.mjs deploy "$IMAGE"
+
+      - name: Smoke test the live site
+        if: steps.tip.outputs.latest == 'true'
+        run: node .github/scripts/lightsail-deploy.mjs smoke "$PUBLIC_URL"
